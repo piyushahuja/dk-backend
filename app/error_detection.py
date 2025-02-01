@@ -213,20 +213,27 @@ def describe_data_quality_issues(schema_file: str, data_file: str) -> List[str]:
 
 def get_data_quality_report(schema_file: str, data_file: str) -> dict:
     """
-    Generate a comprehensive data quality report including issues and their counts.
+    Generate a comprehensive data quality report including issues and cleanup options.
     
     Args:
         schema_file (str): Path to the schema file (Excel format)
         data_file (str): Path to the data file (CSV format)
         
     Returns:
-        dict: A report containing detected errors and their counts in the format:
+        dict: A report containing detected errors and cleanup options in the format:
         {
             "errors": [
                 {
                     "type": str,
                     "count": int,
                     "description": str
+                },
+                ...
+            ],
+            "cleanupOptions": [
+                {
+                    "id": str,
+                    "description": str,
                 },
                 ...
             ]
@@ -243,24 +250,23 @@ def get_data_quality_report(schema_file: str, data_file: str) -> dict:
         data_file=data_file
     )
     
-    # Convert the issues into the required format for checking
-    formatted_issues = [
-        {
-            "issue": issue["issue"],
-            "solution": issue["solution"]
-        }
-        for issue in issues
-    ]
+    # Generate cleanup options based on the detected issues
+    cleanup_options = generate_cleanup_options(
+        schema_file=schema_file,
+        data_file=data_file,
+        issues=issues
+    )
     
     # Run the checks to find problematic rows
     results = generate_and_run_data_checks(
-        issues=formatted_issues,
+        issues=issues,
         data_file=data_file
     )
     
     # Transform results into the API response format
     api_response = {
-        "errors": []
+        "errors": [],
+        "cleanupOptions": cleanup_options
     }
     
     for issue, problem_rows in results.items():
@@ -283,3 +289,60 @@ def get_data_quality_report(schema_file: str, data_file: str) -> dict:
             })
     
     return api_response
+
+def generate_cleanup_options(schema_file: str, data_file: str, issues: list) -> list:
+    """
+    Generate cleanup options based on detected issues.
+    
+    Args:
+        schema_file: Path to the schema file
+        data_file: Path to the data file
+        issues: List of detected issues
+        
+    Returns:
+        List of cleanup options
+    """
+    # Read files
+    schema_df = pd.read_excel(schema_file)
+    data_df = pd.read_csv(data_file)
+    
+    # Prepare content for LLM
+    schema_json = schema_df.to_json(orient='records')
+    data_sample = data_df.head(20).to_json(orient='records')
+    issues_str = "\n".join([f"- {issue['issue']}" for issue in issues])
+    
+    client = OpenAI()
+    prompt = f"""Based on the following data quality issues found in the dataset:
+
+{issues_str}
+
+Schema (showing field definitions):
+{schema_json}
+
+Data sample:
+{data_sample}
+
+Generate a list of possible cleanup operations that could fix these issues.
+Each cleanup option should be independent and actionable.
+
+Return your response as a JSON array of cleanup options with this structure:
+[
+    {{
+        "id": "cleanup_1",
+        "description": "Clear description of what the cleanup will do",
+    }}
+]
+
+Guidelines:
+1. Each option should be specific and focused on one type of cleanup
+2. Include both simple fixes and more complex transformations
+3. Consider data type constraints from the schema
+4. Prioritize non-destructive operations where possible
+"""
+
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": prompt}]
+    )
+    
+    return parse_llm_json_response(response.choices[0].message.content)
