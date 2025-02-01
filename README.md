@@ -64,13 +64,137 @@ uvicorn app.main:app --reload
 
 Upload a file and receive a file identifier for future operations.
 
+**Request:**
+
+- Content-Type: multipart/form-data
+- Body:
+  - `file`: File to upload (required)
+
+**Response:**
+
+```json
+{
+	"file_id": "string" // UUID for future reference
+}
+```
+
 ### POST /validate_schema
 
 Validate a data file against a schema file.
 
+**Request:**
+
+```json
+{
+	"schema_file_id": "string", // UUID of uploaded schema file
+	"data_file_id": "string" // UUID of data file to validate
+}
+```
+
+**Response:**
+
+```json
+{
+    "status": "success",
+    "is_valid": boolean,
+    "errors": [
+        // Array of validation errors if any
+    ]
+}
+```
+
 ### POST /detect_errors
 
 Perform comprehensive error detection and receive a detailed quality report.
+
+**Request:**
+
+```json
+{
+	"schema_file_id": "string", // UUID of uploaded schema file
+	"data_file_id": "string" // UUID of data file to analyze
+}
+```
+
+**Response:**
+
+```json
+{
+	"status": "success",
+	"errors": [
+		{
+			"type": "string", // Short identifier for the issue type
+			"count": 42, // Number of rows affected by this issue
+			"description": "string" // Detailed description of the issue
+		}
+	],
+	"cleanupOptions": [
+		{
+			"id": "cleanup_1",
+			"description": "Description of the cleanup operation"
+		}
+	]
+}
+```
+
+### POST /cleanup
+
+Apply multiple cleanup operations to a data file in sequence.
+
+**Request:**
+
+```json
+{
+	"file_id": "string", // UUID of file to clean
+	"cleanup_operations": [
+		{
+			"id": "string", // Operation identifier
+			"description": "string" // Operation description
+		}
+	]
+}
+```
+
+**Response:**
+
+```json
+{
+	"status": "success",
+	"new_file_id": "string", // UUID of cleaned file
+	"changes_made": [
+		// Array of changes applied
+	]
+}
+```
+
+### GET /download/{file_id}
+
+Download a file using its file ID.
+
+**Parameters:**
+
+- `file_id`: UUID of the file to download (path parameter)
+
+**Response:**
+
+- File download response (CSV file)
+- Content-Type: text/csv
+
+### Error Responses
+
+All endpoints may return the following error responses:
+
+```json
+{
+	"detail": "string" // Error message
+}
+```
+
+Common HTTP status codes:
+
+- 400: Bad Request (invalid input)
+- 404: File Not Found
+- 500: Internal Server Error
 
 ## Security
 
