@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from typing import Dict
 from .validation import validate_data_against_schema
-from .error_detection import detect_data_errors
+from .error_detection import detect_data_errors, get_data_quality_report
 
 app = FastAPI()
 
@@ -20,7 +20,7 @@ async def validate_schema(request: Dict) -> Dict:
     data_file = request["data_file"]
     try:
 
-        validation_result = validate_data_against_schema(schema_file, data_file)
+        validation_result = validate_data_against_schema(schema_file, data_file, llm=True)
         return {
             "status": "success",
             "is_valid": validation_result["is_valid"],
@@ -32,22 +32,22 @@ async def validate_schema(request: Dict) -> Dict:
 @app.post("/detect_errors")
 async def detect_errors(request: Dict) -> Dict:
     """
-    Detect errors in a data file.
+    Detect errors in a data file and return a comprehensive quality report.
     
     Args:
-        request: Dict containing data_file path
+        request: Dict containing schema_file and data_file paths
 
     Returns:
-        Dict containing error detection results
+        Dict containing error detection results in a structured format
     """
     schema_file = request["schema_file"]
     data_file = request["data_file"]
-    try:
 
-        error_results = detect_data_errors(schema_file, data_file)
+    try:
+        quality_report = get_data_quality_report(schema_file, data_file)
         return {
             "status": "success",
-            "errors": error_results
+            **quality_report
         }
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e)) 

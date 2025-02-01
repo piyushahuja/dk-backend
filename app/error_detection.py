@@ -6,6 +6,7 @@ from openai import OpenAI
 import json
 from dotenv import load_dotenv
 from app.helper import parse_llm_json_response
+from app.helper import generate_and_run_data_checks
 
 load_dotenv()
 
@@ -209,3 +210,76 @@ def describe_data_quality_issues(schema_file: str, data_file: str) -> List[str]:
     )
     
     return parse_llm_json_response(response.choices[0].message.content)
+
+def get_data_quality_report(schema_file: str, data_file: str) -> dict:
+    """
+    Generate a comprehensive data quality report including issues and their counts.
+    
+    Args:
+        schema_file (str): Path to the schema file (Excel format)
+        data_file (str): Path to the data file (CSV format)
+        
+    Returns:
+        dict: A report containing detected errors and their counts in the format:
+        {
+            "errors": [
+                {
+                    "type": str,
+                    "count": int,
+                    "description": str
+                },
+                ...
+            ]
+        }
+    """
+    if not os.path.exists(schema_file):
+        raise FileNotFoundError(f"Schema file not found: {schema_file}")
+    if not os.path.exists(data_file):
+        raise FileNotFoundError(f"Data file not found: {data_file}")
+
+    # Get the natural language description of issues using existing LLM function
+    issues = describe_data_quality_issues(
+        schema_file=schema_file,
+        data_file=data_file
+    )
+    
+    # Convert the issues into the required format for checking
+    formatted_issues = [
+        {
+            "issue": issue["issue"],
+            "solution": issue["solution"]
+        }
+        for issue in issues
+    ]
+    
+    # Run the checks to find problematic rows
+    results = generate_and_run_data_checks(
+        issues=formatted_issues,
+        data_file=data_file
+    )
+    
+    # Transform results into the API response format
+    api_response = {
+        "errors": []
+    }
+    
+    for issue, problem_rows in results.items():
+        if isinstance(problem_rows, str) and problem_rows.startswith("Error"):
+            continue
+            
+        error_count = len(problem_rows) if isinstance(problem_rows, pd.DataFrame) else 0
+        
+        # Get the full issue description from the original issues list
+        matching_issue = next(
+            (i for i in issues if i["issue"].startswith(issue)),
+            None
+        )
+        
+        if matching_issue:
+            api_response["errors"].append({
+                "type": issue,
+                "count": error_count,
+                "description": matching_issue["issue"]
+            })
+    
+    return api_response
