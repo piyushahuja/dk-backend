@@ -1,0 +1,19 @@
+{
+	"columns": [
+		{
+			"name": "id",
+			"type": "integer",
+			"required": true
+		},
+		{
+			"name": "name",
+			"type": "string",
+			"required": true
+		},
+		{
+			"name": "age",
+			"type": "integer",
+			"required": false
+		}
+	]
+}
