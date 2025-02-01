@@ -101,3 +101,5 @@ wheels/
 *.exe
 *.o
 *.so
+
+uploads/
