@@ -7,6 +7,8 @@ import re
 from fastapi.security import APIKeyHeader
 from .validation import validate_data_against_schema
 from .error_detection import detect_data_errors, get_data_quality_report
+from .cleanup import perform_cleanup_sequence
+from fastapi.responses import FileResponse
 
 app = FastAPI()
 
@@ -124,5 +126,88 @@ async def detect_errors(request: Dict) -> Dict:
             "status": "success",
             **quality_report
         }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/cleanup")
+async def cleanup_data(request: Dict) -> Dict:
+    """
+    Apply multiple cleanup operations to a data file in sequence.
+    
+    Args:
+        request: Dict containing:
+            - file_id: ID of the file to clean
+            - cleanup_operations: List of cleanup operations to perform in sequence
+                [
+                    {
+                        "id": str,
+                        "description": str
+                    },
+                    ...
+                ]
+            
+    Returns:
+        Dict containing:
+            - new_file_id: ID of the cleaned file
+            - changes_made: List of changes made by each operation
+    """
+    file_id = request.get("file_id")
+    cleanup_operations = request.get("cleanup_operations")
+    
+    if not file_id or not cleanup_operations:
+        raise HTTPException(status_code=400, detail="Missing file_id or cleanup_operations")
+    
+    if not isinstance(cleanup_operations, list):
+        raise HTTPException(status_code=400, detail="cleanup_operations must be a list")
+    
+    if file_id not in file_storage:
+        raise HTTPException(status_code=404, detail="File not found")
+    
+    if not file_storage[file_id].exists():
+        raise HTTPException(status_code=404, detail="File not found or has been removed")
+    
+    try:
+        # Perform all cleanup operations in sequence
+        cleaned_file_path, changes_made = perform_cleanup_sequence(
+            str(file_storage[file_id]),
+            cleanup_operations
+        )
+        
+        # Generate new file_id for final cleaned file
+        new_file_id = str(uuid.uuid4())
+        file_storage[new_file_id] = cleaned_file_path
+        
+        return {
+            "status": "success",
+            "new_file_id": new_file_id,
+            "changes_made": changes_made
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/download/{file_id}")
+async def download_file(file_id: str):
+    """
+    Download a file using its file ID.
+    
+    Args:
+        file_id: ID of the file to download
+        
+    Returns:
+        FileResponse containing the requested file
+    """
+    if file_id not in file_storage:
+        raise HTTPException(status_code=404, detail="File not found")
+    
+    file_path = file_storage[file_id]
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="File not found or has been removed")
+    
+    try:
+        return FileResponse(
+            path=file_path,
+            filename=file_path.name,
+            media_type="text/csv"
+        )
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e)) 
