@@ -5,6 +5,7 @@ from openai import OpenAI
 import tempfile
 import os
 import logging
+from typing import List, Dict
 
 logger = logging.getLogger(__name__)
 
@@ -221,3 +222,50 @@ def check_data_quality(df):
                 print(f"Warning: Could not delete temporary file {temp_file}: {str(e)}")
     
     return results 
+
+def parse_error_analysis_csv(csv_file_path: str) -> List[Dict]:
+    """
+    Parse the error analysis CSV file into a structured JSON format.
+    
+    Args:
+        csv_file_path: Path to the CSV file containing error analysis results
+        
+    Returns:
+        List of dictionaries, each containing:
+            - id: The issue identifier (issue_1, issue_2, etc.)
+            - rows: List of row indices where this issue was found
+            
+    Example:
+    [
+        {"id": "issue_1", "rows": [0, 5, 7]},
+        {"id": "issue_2", "rows": [3, 9]},
+        ...
+    ]
+    """
+    try:
+        # Read the CSV file
+        df = pd.read_csv(csv_file_path)
+        
+        # Get issue columns (all columns except row_index)
+        issue_columns = [col for col in df.columns if col != 'row_index']
+        
+        # Initialize results list
+        results = []
+        
+        # For each issue column
+        for issue_id in issue_columns:
+            # Get row indices where issue is True
+            affected_rows = df[df[issue_id] == True]['row_index'].tolist()
+            
+            # Add to results if there are any affected rows
+            if affected_rows:
+                results.append({
+                    "id": issue_id,
+                    "rows": affected_rows
+                })
+        
+        return results
+        
+    except Exception as e:
+        logger.error(f"Error parsing error analysis CSV: {str(e)}", exc_info=True)
+        raise ValueError(f"Failed to parse error analysis CSV: {str(e)}") 
