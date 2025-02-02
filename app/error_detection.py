@@ -490,7 +490,7 @@ def cleanup_data_with_code_interpreter(schema_file: str, data_file: str, cleanup
             2. Save the cleaned file
             
             Make sure to save and attach the final cleaned file.""",
-            files=[schema_file, data_file]
+            files=[data_file]
         )
         
         # Format cleanup operations for the message
@@ -520,7 +520,7 @@ Make sure to save and attach the cleaned file when you're done.""",
         assistant_service.cleanup_resources(assistant.id, file_ids)
         
         # Return the file path and original cleanup descriptions
-        return str(cleaned_file_path), [op["description"] for op in cleanup_operations]
+        return str(cleaned_file_path), [{"cleanup_id": op["id"], "changes": op["description"]} for op in cleanup_operations]
             
     except Exception as e:
         logger.error(f"Error in cleanup_data_with_code_interpreter: {str(e)}", exc_info=True)

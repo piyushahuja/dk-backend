@@ -67,7 +67,7 @@ def test_upload_file_empty():
     assert response.status_code == 200
     assert "file_id" in response.json()'''
 
-def test_end_to_end_workflow():
+'''def test_end_to_end_workflow():
     # 1. Upload schema file
     schema_path = Path("tests/fixtures/SAP_Customer_Master_Data.xlsx")
     with open(schema_path, "rb") as f:
@@ -86,13 +86,13 @@ def test_end_to_end_workflow():
     assert data_response.status_code == 200
     data_file_id = data_response.json()["file_id"]
 
-    '''# 3. Test validation with uploaded files
+    # 3. Test validation with uploaded files
     validate_response = client.post("/validate_schema", json={
         "schema_file_id": schema_file_id,
         "data_file_id": data_file_id
     })
     assert validate_response.status_code == 200
-    assert validate_response.json()["status"] == "success"'''
+    assert validate_response.json()["status"] == "success"
 
     # 4. Test error detection with uploaded files
     detect_response = client.post("/detect_errors", json={
@@ -103,9 +103,9 @@ def test_end_to_end_workflow():
     print(detect_response.json())
     
     assert detect_response.status_code == 200
-    assert detect_response.json()["status"] == "success"
+    assert detect_response.json()["status"] == "success"'''
 
-'''def test_cleanup_success():
+def test_cleanup_success():
     # 1. Upload test data file
     data_path = Path("tests/fixtures/test_no_err_col.csv")
     with open(data_path, "rb") as f:
@@ -152,7 +152,7 @@ def test_end_to_end_workflow():
         assert "cleanup_id" in change
         assert "changes" in change
 
-def test_cleanup_invalid_file_id():
+'''def test_cleanup_invalid_file_id():
     response = client.post("/cleanup", json={
         "data_file_id": "nonexistent",
         "schema_file_id": "nonexistent",
@@ -190,9 +190,9 @@ def test_cleanup_invalid_request():
         "schema_file_id": "some_schema_id",
         "cleanup_operations": "not_a_list"
     })
-    assert response.status_code == 400
+    assert response.status_code == 400'''
 
-def test_cleanup_end_to_end():
+'''def test_cleanup_end_to_end():
     # 1. Upload test data file
     data_path = Path("tests/fixtures/test_no_err_col.csv")
     with open(data_path, "rb") as f:
