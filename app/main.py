@@ -115,7 +115,7 @@ async def detect_errors(request: Dict) -> Dict:
     
     schema_file_id = request["schema_file_id"]
     data_file_id = request["data_file_id"]
-    use_code_interpreter = request.get("use_code_interpreter", True)
+    use_code_interpreter = request.get("use_code_interpreter", False)
     
     logger.debug(f"Processing files: schema={schema_file_id}, data={data_file_id}")
     

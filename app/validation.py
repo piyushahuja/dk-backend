@@ -4,6 +4,7 @@ import pandas as pd
 from openai import OpenAI
 import json
 from dotenv import load_dotenv
+from .assistant_service import AssistantService
 
 load_dotenv()
 
@@ -77,96 +78,56 @@ def validate_data_against_schema_llm(schema_file: str, data_file: str) -> Dict:
         Dict containing validation results
     """
     print("LLM validation")
-    client = OpenAI()
+    assistant_service = AssistantService()
     
-    # Upload files
-    schema_file_obj = client.files.create(
-        file=open(schema_file, "rb"),
-        purpose="assistants"
-    )
-    data_file_obj = client.files.create(
-        file=open(data_file, "rb"),
-        purpose="assistants"
-    )
-
-    # Create assistant
-    assistant = client.beta.assistants.create(
-        name="Data Validator",
-        instructions="""You are a data validation assistant. Analyze the provided schema and data files and validate that:
-        1. Data types match the schema
-        2. Mandatory fields are present
-        3. Field lengths match specifications
-        4. Any other validation issues
-        
-        Return your response as a JSON object with this structure:
-        {
-            "is_valid": boolean,
-            "errors": [list of error messages]
-        }""",
-        model="gpt-4o",
-        tools=[{"type": "code_interpreter"}],
-        tool_resources={
-            "code_interpreter": {
-                "file_ids": [schema_file_obj.id, data_file_obj.id]
-            }
-        }
-    )
-
-    # Create thread and message
-    thread = client.beta.threads.create()
-    message = client.beta.threads.messages.create(
-        thread_id=thread.id,
-        role="user",
-        content="""Please validate the structure of the data file against the schema file. 
-        Focus only on schema-level validation:
-        1. Check if all required fields from the schema exist in the data file
-        2. Verify that the columns have the correct data types as specified in the schema
-        3. Validate any field length constraints defined in the schema
-        
-        Do not validate individual row values at this time.
-        
-        Return your response as a JSON object with this structure:
-        {
-            "is_valid": false,
-            "errors": [
-                "Required column 'user_id' is missing from the data file",
-                "Column 'age' is defined as INTEGER in schema but contains string data",
-                "Column 'email' is defined as VARCHAR(255) but contains values longer than 255 characters"
-            ]
-        }"""
-    )
-
-    # Run the assistant
-    run = client.beta.threads.runs.create(
-        thread_id=thread.id,
-        assistant_id=assistant.id
-    )
-
-    # Wait for completion
-    while True:
-        run = client.beta.threads.runs.retrieve(
-            thread_id=thread.id,
-            run_id=run.id
+    try:
+        # Create assistant with files
+        assistant, file_ids = assistant_service.create_assistant_with_files(
+            name="Data Validator",
+            instructions="""You are a data validation assistant. Analyze the provided schema and data files and validate that:
+            1. Data types match the schema
+            2. Mandatory fields are present
+            3. Field lengths match specifications
+            4. Any other validation issues
+            
+            Return your response as a JSON object with this structure:
+            {
+                "is_valid": boolean,
+                "errors": [list of error messages]
+            }""",
+            files=[schema_file, data_file]
         )
-        if run.status == 'completed':
-            break
-        elif run.status in ['failed', 'cancelled', 'expired']:
-            raise Exception(f"Assistant run failed with status: {run.status}")
-
-    # Get the response
-    messages = client.beta.threads.messages.list(
-        thread_id=thread.id
-    )
-    response = messages.data[0].content[0].text.value
-
-    # Clean up
-    client.beta.assistants.delete(assistant.id)
-    client.files.delete(schema_file_obj.id)
-    client.files.delete(data_file_obj.id)
-
-    print(response)
-    
-    return json.loads(response)
+        
+        # Run conversation
+        response = assistant_service.run_conversation(
+            assistant_id=assistant.id,
+            message="""Please validate the structure of the data file against the schema file. 
+            Focus only on schema-level validation:
+            1. Check if all required fields from the schema exist in the data file
+            2. Verify that the columns have the correct data types as specified in the schema
+            3. Validate any field length constraints defined in the schema
+            
+            Do not validate individual row values at this time.
+            
+            Return your response as a JSON object with this structure:
+            {
+                "is_valid": false,
+                "errors": [
+                    "Required column 'user_id' is missing from the data file",
+                    "Column 'age' is defined as INTEGER in schema but contains string data",
+                    "Column 'email' is defined as VARCHAR(255) but contains values longer than 255 characters"
+                ]
+            }"""
+        )
+        
+        # Clean up resources
+        assistant_service.cleanup_resources(assistant.id, file_ids)
+        
+        return json.loads(response["message"])
+        
+    except Exception as e:
+        print(f"Error during validation: {str(e)}")
+        raise
 
 def validate_data_against_schema_chat(schema_file: str, data_file: str) -> Dict:
     """

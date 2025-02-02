@@ -10,6 +10,8 @@ from app.helper import generate_and_run_data_checks
 from pathlib import Path
 import logging
 from logging.handlers import RotatingFileHandler
+from .assistant_service import AssistantService
+import tempfile
 
 load_dotenv()
 
@@ -196,7 +198,7 @@ def describe_data_quality_issues(schema_file: str, data_file: str) -> List[str]:
     
     # Prepare content for LLM
     schema_json = schema_df.to_json(orient='records')
-    data_sample = data_df.head(20).to_json(orient='records')
+    data_sample = data_df.head().to_json(orient='records')
     
     client = OpenAI()
     prompt = f"""Please analyze this dataset and describe any data quality issues you find.
@@ -214,13 +216,12 @@ def describe_data_quality_issues(schema_file: str, data_file: str) -> List[str]:
     4. Inconsistent data patterns
     5. Outliers or suspicious values
     6. Any other data quality concerns
-
-    You must identify the THREE most important issues in the dataset.
     
     Return your response as a JSON array of objects, where each object contains the following fields:
     {{
-        "issue": "description of the issue",
-        "solution": "suggested solution to the issue (this should be a data cleaning solution)"
+        "type": "type of issue",
+        "description": "one line description of the issue",
+        "solution": "one line suggested solution to the issue (this should be a data cleaning solution)"
     }}
     """
 
@@ -231,7 +232,7 @@ def describe_data_quality_issues(schema_file: str, data_file: str) -> List[str]:
     
     return parse_llm_json_response(response.choices[0].message.content)
 
-def get_data_quality_report(schema_file: str, data_file: str, use_code_interpreter: bool = True) -> dict:
+def get_data_quality_report(schema_file: str, data_file: str, use_code_interpreter: bool = False) -> dict:
     """
     Generate a comprehensive data quality report including issues and cleanup options.
     
@@ -250,8 +251,6 @@ def get_data_quality_report(schema_file: str, data_file: str, use_code_interpret
 
     print(f"use_code_interpreter: {use_code_interpreter}")
     
-    use_code_interpreter = True
-
     if use_code_interpreter:
         # Use Code Interpreter version
         errors = detect_data_errors_with_code_interpreter(
@@ -288,7 +287,7 @@ def get_data_quality_report(schema_file: str, data_file: str, use_code_interpret
             data_file=data_file
         )
         
-        # Generate cleanup options based on the detected issues
+        '''# Generate cleanup options based on the detected issues
         cleanup_options = generate_cleanup_options(
             schema_file=schema_file,
             data_file=data_file,
@@ -299,15 +298,15 @@ def get_data_quality_report(schema_file: str, data_file: str, use_code_interpret
         results = generate_and_run_data_checks(
             issues=issues,
             data_file=data_file
-        )
+        )'''
         
         # Transform results into the API response format
         api_response = {
             "errors": [],
-            "cleanupOptions": cleanup_options
+            "cleanupOptions": []
         }
         
-        for issue, problem_rows in results.items():
+        '''for issue, problem_rows in results.items():
             if isinstance(problem_rows, str) and problem_rows.startswith("Error"):
                 continue
             
@@ -324,7 +323,18 @@ def get_data_quality_report(schema_file: str, data_file: str, use_code_interpret
                     "type": issue,
                     "count": error_count,
                     "description": matching_issue["issue"]
-                })
+                })'''
+        
+        for i in range(len(issues["errors"])):
+            api_response["errors"].append({
+                "id": i,
+                "type": issues["errors"][i]["type"],
+                "description": issues["errors"][i]["description"]
+            })
+            api_response["cleanupOptions"].append({
+                "id": i,
+                "description": issues["errors"][i]["solution"]
+            })
         
         return api_response
 
@@ -389,20 +399,11 @@ def detect_data_errors_with_code_interpreter(schema_file: str, data_file: str) -
     """Uses OpenAI Code Interpreter to detect errors in data values."""
     logger.info(f"Starting error detection with Code Interpreter for files: {schema_file}, {data_file}")
     
-    client = OpenAI()
+    assistant_service = AssistantService()
     
     try:
-        # Upload files
-        logger.debug("Uploading files to OpenAI")
-        data_file_obj = client.files.create(
-            file=open(data_file, "rb"),
-            purpose="assistants"
-        )
-        logger.debug(f"Files uploaded successfully. Data file ID: {data_file_obj.id}")
-
-        # Create assistant
-        logger.debug("Creating OpenAI assistant")
-        assistant = client.beta.assistants.create(
+        # Create assistant with files
+        assistant, file_ids = assistant_service.create_assistant_with_files(
             name="Data Validator",
             instructions="""You are a data validation assistant. Analyze the provided data file to:
             1. Check for data quality issues
@@ -423,25 +424,13 @@ def detect_data_errors_with_code_interpreter(schema_file: str, data_file: str) -
             }
             
             Make sure to save and attach the JSON file when you're done.""",
-            model="gpt-4o",
-            tools=[{"type": "code_interpreter"}],
-            tool_resources={
-                "code_interpreter": {
-                    "file_ids": [data_file_obj.id]
-                }
-            }
+            files=[data_file]
         )
-        logger.info(f"Assistant created successfully with ID: {assistant.id}")
-
-        # Create thread
-        thread = client.beta.threads.create()
-        logger.debug(f"Created thread with ID: {thread.id}")
-
-        # Send message
-        message = client.beta.threads.messages.create(
-            thread_id=thread.id,
-            role="user",
-            content="""Please analyze the data file and identify any data quality issues.
+        
+        # Run conversation
+        response = assistant_service.run_conversation(
+            assistant_id=assistant.id,
+            message="""Please analyze the data file and identify any data quality issues.
             For each issue:
             1. Describe the problem
             2. Count how many rows are affected
@@ -451,72 +440,26 @@ def detect_data_errors_with_code_interpreter(schema_file: str, data_file: str) -
             Use Python to analyze the file and save your findings as 'validation_results.json'.
             Make sure to create and attach the JSON file."""
         )
-        logger.debug(f"Sent initial message with ID: {message.id}")
-
-        # Run the assistant and wait for completion
-        run = client.beta.threads.runs.create_and_poll(
-            thread_id=thread.id,
-            assistant_id=assistant.id
-        )
-
-        if run.status == 'completed':
-            # Get the response and file
-            messages = client.beta.threads.messages.list(
-                thread_id=thread.id
-            )
-            logger.debug(f"Full assistant response: {messages}")
-            
-            # Get file ID from message attachments
-            file_id = None
-            if messages.data[0].attachments:
-                file_id = messages.data[0].attachments[0].file_id
-                logger.debug(f"Found file in message attachments with ID: {file_id}")
-            
-            if not file_id:
-                # Fallback to checking run steps
-                logger.debug("No file in message attachments, checking run steps...")
-                run_steps = client.beta.threads.runs.steps.list(
-                    thread_id=thread.id,
-                    run_id=run.id
-                )
-                
-                for step in run_steps.data:
-                    if step.step_details.type == "tool_calls":
-                        for call in step.step_details.tool_calls:
-                            if call.type == "code_interpreter" and hasattr(call.code_interpreter, "outputs"):
-                                for output in call.code_interpreter.outputs:
-                                    if output.type == "file":
-                                        file_id = output.file_id
-                                        logger.debug(f"Found file in run steps with ID: {file_id}")
-                                        break
-            
-            if not file_id:
-                logger.error("Assistant did not provide results file")
-                raise Exception("Assistant did not generate results file")
-                
+        
+        if response["file_id"]:
             # Download and parse the JSON file
-            results_file = client.files.content(file_id)
-            results = json.loads(results_file.read().decode())
-            logger.debug(f"Parsed results: {results}")
-            
-            return results
-
+            with tempfile.NamedTemporaryFile(suffix='.json', delete=False) as temp_file:
+                assistant_service.download_file(response["file_id"], temp_file.name)
+                with open(temp_file.name, 'r') as f:
+                    results = json.load(f)
+                os.unlink(temp_file.name)
         else:
-            error_msg = f"Assistant run failed with status: {run.status}"
-            logger.error(error_msg)
-            raise Exception(error_msg)
+            logger.error("Assistant did not provide results file")
+            raise Exception("Assistant did not generate results file")
+        
+        # Clean up resources
+        assistant_service.cleanup_resources(assistant.id, file_ids)
+        
+        return results
             
     except Exception as e:
         logger.error(f"Error in detect_data_errors_with_code_interpreter: {str(e)}", exc_info=True)
         raise
-    finally:
-        # Clean up
-        try:
-            logger.debug("Cleaning up resources")
-            client.beta.assistants.delete(assistant.id)
-            client.files.delete(data_file_obj.id)
-        except Exception as e:
-            logger.warning(f"Error during cleanup: {str(e)}")
 
 def cleanup_data_with_code_interpreter(schema_file: str, data_file: str, cleanup_operations: List[Dict], thread_id: str = None) -> Tuple[str, List[str]]:
     """
@@ -527,138 +470,58 @@ def cleanup_data_with_code_interpreter(schema_file: str, data_file: str, cleanup
         data_file: Path to the CSV data file
         cleanup_operations: List of cleanup operations to perform
         thread_id: Optional ID of existing thread from validation
-    
+        
     Returns:
         Tuple containing:
             - Path to cleaned file
             - List of cleanup operation descriptions
     """
-    client = OpenAI()
     logger.info(f"Starting cleanup with Code Interpreter for file: {data_file}")
     
+    assistant_service = AssistantService()
+    
     try:
-        # Upload files if no existing thread
-        if not thread_id:
-            schema_file_obj = client.files.create(
-                file=open(schema_file, "rb"),
-                purpose="assistants"
-            )
-            data_file_obj = client.files.create(
-                file=open(data_file, "rb"),
-                purpose="assistants"
-            )
-
-            # Create assistant
-            assistant = client.beta.assistants.create(
-                name="Data Cleaner",
-                instructions="""You are a data cleaning assistant. Apply the requested cleanup operations to the data file.
-                For each operation:
-                1. Apply the changes
-                2. Save the cleaned file
-                
-                Make sure to save and attach the final cleaned file.""",
-                model="gpt-4o",
-                tools=[{"type": "code_interpreter"}],
-                tool_resources={
-                    "code_interpreter": {
-                        "file_ids": [data_file_obj.id]
-                    }
-                }
-            )
-
-            # Create thread
-            thread = client.beta.threads.create()
-        else:
-            # Use existing thread and assistant
-            thread = client.beta.threads.retrieve(thread_id)
-            runs = client.beta.threads.runs.list(thread_id=thread.id)
-            assistant = client.beta.assistants.retrieve(runs.data[0].assistant_id)
-
+        # Create assistant with files
+        assistant, file_ids = assistant_service.create_assistant_with_files(
+            name="Data Cleaner",
+            instructions="""You are a data cleaning assistant. Apply the requested cleanup operations to the data file.
+            For each operation:
+            1. Apply the changes
+            2. Save the cleaned file
+            
+            Make sure to save and attach the final cleaned file.""",
+            files=[schema_file, data_file]
+        )
+        
         # Format cleanup operations for the message
         operations_text = "\n".join([f"{i+1}. {op['description']}" for i, op in enumerate(cleanup_operations)])
-
-        # Run the assistant and wait for completion
-        run = client.beta.threads.runs.create_and_poll(
-            thread_id=thread.id,
+        
+        # Run conversation
+        response = assistant_service.run_conversation(
             assistant_id=assistant.id,
-            instructions=f"""Please apply the following cleanup operations to the data file:
+            message=f"""Please apply the following cleanup operations to the data file:
 
 {operations_text}
 
-Make sure to save and attach the cleaned file when you're done."""
+Make sure to save and attach the cleaned file when you're done.""",
+            thread_id=thread_id
         )
-
-        if run.status == 'completed':
-            # Get the response and cleaned file
-            messages = client.beta.threads.messages.list(
-                thread_id=thread.id
-            )
-            
-            logger.debug(f"Assistant's response: {messages}")
-            
-            # Get file ID from message attachments
-            file_id = None
-            if messages.data[0].attachments:
-                file_id = messages.data[0].attachments[0].file_id
-                logger.debug(f"Found file in message attachments with ID: {file_id}")
-            
-            if not file_id:
-                # Fallback to checking run steps
-                logger.debug("No file in message attachments, checking run steps...")
-                run_steps = client.beta.threads.runs.steps.list(
-                    thread_id=thread.id,
-                    run_id=run.id
-                )
-                
-                for step in run_steps.data:
-                    if step.step_details.type == "tool_calls":
-                        for call in step.step_details.tool_calls:
-                            if call.type == "code_interpreter" and hasattr(call.code_interpreter, "outputs"):
-                                for output in call.code_interpreter.outputs:
-                                    if output.type == "file":
-                                        file_id = output.file_id
-                                        logger.debug(f"Found file in run steps with ID: {file_id}")
-                                        break
-            
-            if not file_id:
-                logger.error("Assistant did not provide cleaned file")
-                raise Exception("Assistant did not generate a cleaned file")
-                
-            try:
-                # Download and save the cleaned file
-                logger.debug("Downloading cleaned file")
-                cleaned_file = client.files.content(file_id)
-                
-                cleaned_file_path = Path(data_file).parent / f"cleaned_{Path(data_file).name}"
-                logger.debug(f"Will save cleaned file to: {cleaned_file_path}")
-                
-                with open(cleaned_file_path, "wb") as f:
-                    f.write(cleaned_file.read())
-                logger.info(f"Successfully saved cleaned file to: {cleaned_file_path}")
-                logger.debug(f"File exists: {cleaned_file_path.exists()}, Size: {cleaned_file_path.stat().st_size} bytes")
-
-            except Exception as e:
-                logger.error(f"Error saving cleaned file: {str(e)}", exc_info=True)
-                logger.error(f"Attempted to save to path: {cleaned_file_path}")
-                raise Exception(f"Failed to save cleaned file: {str(e)}")
-
-            # Return the file path and original cleanup descriptions
-            return str(cleaned_file_path), [op["description"] for op in cleanup_operations]
+        
+        if response["file_id"]:
+            # Download and save the cleaned file
+            cleaned_file_path = Path(data_file).parent / f"cleaned_{Path(data_file).name}"
+            assistant_service.download_file(response["file_id"], str(cleaned_file_path))
+            logger.info(f"Successfully saved cleaned file to: {cleaned_file_path}")
         else:
-            error_msg = f"Assistant run failed with status: {run.status}"
-            logger.error(error_msg)
-            raise Exception(error_msg)
+            logger.error("Assistant did not provide cleaned file")
+            raise Exception("Assistant did not generate a cleaned file")
+        
+        # Clean up resources
+        assistant_service.cleanup_resources(assistant.id, file_ids)
+        
+        # Return the file path and original cleanup descriptions
+        return str(cleaned_file_path), [op["description"] for op in cleanup_operations]
             
     except Exception as e:
         logger.error(f"Error in cleanup_data_with_code_interpreter: {str(e)}", exc_info=True)
         raise
-    finally:
-        # Clean up if we created new resources
-        if not thread_id:
-            try:
-                logger.debug("Cleaning up resources")
-                client.beta.assistants.delete(assistant.id)
-                client.files.delete(schema_file_obj.id)
-                client.files.delete(data_file_obj.id)
-            except Exception as e:
-                logger.warning(f"Error during cleanup: {str(e)}")
