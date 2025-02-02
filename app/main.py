@@ -10,15 +10,35 @@ from .error_detection import detect_data_errors, get_data_quality_report, cleanu
 from .cleanup import perform_cleanup_sequence
 from fastapi.responses import FileResponse
 from app.error_detection import logger
-
+from fastapi.middleware.cors import CORSMiddleware
 app = FastAPI()
 
-# Create a secure upload directory outside the application root
-UPLOAD_DIR = Path(".\\uploads")
-UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Replace "*" with specific frontend URLs for security
+    allow_credentials=True,
+    allow_methods=["*"],  # Allow all HTTP methods
+    allow_headers=["*"],  # Allow all headers
+)
 
-# Ensure upload directory permissions are restricted
-os.chmod(UPLOAD_DIR, 0o700)  # Only owner can read/write/execute
+# # Create a secure upload directory outside the application root
+# UPLOAD_DIR = Path(".\\uploads")
+# UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+# # Ensure upload directory permissions are restricted
+# os.chmod(UPLOAD_DIR, 0o700)  # Only owner can read/write/execute
+
+try:
+    UPLOAD_DIR = Path("./uploads")  # Use forward slash for better cross-platform compatibility
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Ensure upload directory permissions are restricted
+    # Set permissions to read, write, and execute only by the owner
+    UPLOAD_DIR.chmod(0o700)
+except PermissionError:
+    raise PermissionError("Failed to set directory permissions. Check user permissions.")
+except Exception as e:
+    raise Exception(f"An error occurred while setting up the upload directory: {str(e)}")
 
 # Store file_id to filepath mappings
 file_storage: Dict[str, Path] = {}
