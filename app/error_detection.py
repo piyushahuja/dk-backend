@@ -5,8 +5,7 @@ import pandera as pa
 from openai import OpenAI
 import json
 from dotenv import load_dotenv
-from app.helper import parse_llm_json_response, parse_natural_language_response
-from app.helper import generate_and_run_data_checks
+from app.helper import parse_llm_json_response, parse_error_analysis_csv
 from pathlib import Path
 import logging
 from logging.handlers import RotatingFileHandler
@@ -31,150 +30,6 @@ console_handler.setFormatter(log_format)
 # Add handlers to the logger
 logger.addHandler(file_handler)
 logger.addHandler(console_handler)
-
-def detect_data_errors(schema_file: str, data_file: str, llm: bool = True) -> List[Dict]:
-    """
-    Wrapper function that detects data errors using either LLM or traditional detection.
-    
-    Args:
-        schema_file: Path to the XLSX schema file
-        data_file: Path to the CSV data file
-        llm: If True, uses LLM detection. If False, uses traditional detection.
-    
-    Returns:
-        List of dictionaries containing error information
-    """
-    if not os.path.exists(schema_file):
-        raise FileNotFoundError(f"Schema file not found: {schema_file}")
-    if not os.path.exists(data_file):
-        raise FileNotFoundError(f"Data file not found: {data_file}")
-
-    if llm:
-        return detect_data_errors_llm(schema_file, data_file)
-    else:
-        return detect_data_errors_traditional(schema_file, data_file)
-
-
-def detect_data_errors_llm(schema_file: str, data_file: str) -> List[Dict]:
-    """
-    Uses LLM to detect errors in data values based on schema rules.
-    
-    Args:
-        schema_file: Path to the XLSX schema file
-        data_file: Path to the CSV data file
-    
-    Returns:
-        List of dictionaries containing error information
-    """
-    if not os.path.exists(schema_file):
-        raise FileNotFoundError(f"Schema file not found: {schema_file}")
-    if not os.path.exists(data_file):
-        raise FileNotFoundError(f"Data file not found: {data_file}")
-
-    # Read files
-    schema_df = pd.read_excel(schema_file)
-    data_df = pd.read_csv(data_file)
-    
-    # Prepare content for LLM
-    schema_json = schema_df.to_json(orient='records')
-    data_sample = data_df.to_json(orient='records')
-    
-    client = OpenAI()
-    prompt = f"""Please check the data for any errors or invalid values.
-    
-    Schema (showing field definitions):
-    {schema_json}
-    
-    Data to validate:
-    {data_sample}
-    
-    Please check:
-    1. Mandatory fields have values
-    2. Values match their specified lengths
-    3. Values contain valid characters for their type
-    4. Any other data quality issues
-    
-    Return your response as a JSON array of error objects with this structure:
-    [
-        {{
-            "field": field_name,
-            "row": row_number,
-            "value": invalid_value,
-            "error": error_description
-        }}
-    ]
-    """
-
-    response = client.chat.completions.create(
-        model="gpt-4o",
-        messages=[{"role": "user", "content": prompt}]
-    )
-    
-    return json.loads(response.choices[0].message.content)
-
-def detect_data_errors_traditional(schema_file: str, data_file: str) -> List[Dict]:
-    """
-    Detects errors in data values based on schema rules using traditional methods.
-    
-    Args:
-        schema_file: Path to the XLSX schema file
-        data_file: Path to the CSV data file
-    
-    Returns:
-        List of dictionaries containing error information
-    """
-    if not os.path.exists(schema_file):
-        raise FileNotFoundError(f"Schema file not found: {schema_file}")
-    if not os.path.exists(data_file):
-        raise FileNotFoundError(f"Data file not found: {data_file}")
-
-    schema_df = pd.read_excel(schema_file)
-    data_df = pd.read_csv(data_file)
-    errors = []
-    
-    # Create schema dictionary for easy lookup
-    schema_dict = {row['Field Name']: row.to_dict() for _, row in schema_df.iterrows()}
-    
-    # Check each field's values
-    for field, info in schema_dict.items():
-        data_type = info['Data Type']
-        is_mandatory = info['Attribute'] == 'Mandatory'
-        
-        if data_type.startswith('CHAR'):
-            max_length = int(data_type.split('(')[1].rstrip(')'))
-            
-            # Check for empty values in mandatory fields
-            if is_mandatory:
-                empty_mask = data_df[field].isna() | (data_df[field].astype(str).str.strip() == '')
-                for idx in data_df[empty_mask].index:
-                    errors.append({
-                        "field": field,
-                        "row": idx + 1,  # +1 for human-readable row numbers
-                        "value": None,
-                        "error": "Mandatory field is empty"
-                    })
-            
-            # Check field lengths
-            too_long_mask = data_df[field].astype(str).str.strip().str.len() > max_length
-            for idx in data_df[too_long_mask].index:
-                errors.append({
-                    "field": field,
-                    "row": idx + 1,
-                    "value": data_df.at[idx, field],
-                    "error": f"Value exceeds maximum length of {max_length}"
-                })
-            
-            # Check for invalid characters
-            invalid_char_mask = ~data_df[field].astype(str).str.match(r'^[A-Za-z0-9\s\-_.,\'\"@#&+()\/]*$')
-            for idx in data_df[invalid_char_mask].index:
-                errors.append({
-                    "field": field,
-                    "row": idx + 1,
-                    "value": data_df.at[idx, field],
-                    "error": "Contains invalid characters"
-                })
-    
-    return errors
 
 def describe_data_quality_issues(schema_file: str, data_file: str) -> List[str]:
     """
@@ -216,17 +71,19 @@ def describe_data_quality_issues(schema_file: str, data_file: str) -> List[str]:
     4. Inconsistent data patterns
     5. Outliers or suspicious values
     6. Any other data quality concerns
+
+    This is a sample from a larger dataset. You must extrapolate the issues to the entire dataset.
     
     Return your response as a JSON array of objects, where each object contains the following fields:
     {{
-        "type": "type of issue",
-        "description": "one line description of the issue",
+        "type": "what the issue is",
+        "description": "description of the issue",
         "solution": "one line suggested solution to the issue (this should be a data cleaning solution)"
     }}
     """
 
     response = client.chat.completions.create(
-        model="gpt-4o",
+        model="o1-mini",
         messages=[{"role": "user", "content": prompt}]
     )
     
@@ -248,15 +105,32 @@ def get_data_quality_report(schema_file: str, data_file: str, use_code_interpret
         raise FileNotFoundError(f"Schema file not found: {schema_file}")
     if not os.path.exists(data_file):
         raise FileNotFoundError(f"Data file not found: {data_file}")
+    
+    use_code_interpreter = True
 
     print(f"use_code_interpreter: {use_code_interpreter}")
     
     if use_code_interpreter:
-        # Use Code Interpreter version
-        errors = detect_data_errors_with_code_interpreter(
+        # First get the issues using natural language description
+        issues = describe_data_quality_issues(
             schema_file=schema_file,
             data_file=data_file
         )
+
+        logger.info(f"Issues: {issues}")
+        
+        # Then get detailed row-level analysis
+        results_csv = detect_data_errors_with_code_interpreter_detailed(
+            data_file=data_file,
+            issues=issues["errors"]
+        )
+
+        logger.info(f"Results CSV returned")
+        
+        # Parse the detailed results
+        detailed_results = parse_error_analysis_csv(results_csv)
+
+        logger.info(f"Detailed results: {detailed_results}")
         
         # Transform errors into API response format
         api_response = {
@@ -264,18 +138,24 @@ def get_data_quality_report(schema_file: str, data_file: str, use_code_interpret
             "cleanupOptions": []
         }
         
-        for error in errors["errors"]:
+        # Match detailed results with original issues
+        for i, issue in enumerate(issues["errors"]):
+            issue_id = f"issue_{i+1}"
+            # Find matching detailed result
+            detailed_result = next((r for r in detailed_results if r["id"] == issue_id), None)
+            affected_rows = detailed_result["rows"] if detailed_result else []
+            
             api_response["errors"].append({
-                "type": error["type"],
-                "count": error["count"],
-                "rows": error["rows"],
-                "suggested_fix": error["suggested_fix"],
-                "description": error["description"]
+                "id": i,
+                "type": issue["type"],
+                "count": len(affected_rows),
+                "rows": affected_rows,
+                "description": issue["description"]
             })
             
             api_response["cleanupOptions"].append({
-                "id": f"cleanup_{len(api_response['cleanupOptions']) + 1}",
-                "description": error["suggested_fix"]
+                "id": i,
+                "description": issue["solution"]
             })
             
         return api_response
@@ -445,9 +325,18 @@ def detect_data_errors_with_code_interpreter(schema_file: str, data_file: str) -
             # Download and parse the JSON file
             with tempfile.NamedTemporaryFile(suffix='.json', delete=False) as temp_file:
                 assistant_service.download_file(response["file_id"], temp_file.name)
-                with open(temp_file.name, 'r') as f:
-                    results = json.load(f)
-                os.unlink(temp_file.name)
+                # Close the file before reading it again
+                temp_file.close()
+                
+                try:
+                    with open(temp_file.name, 'r') as f:
+                        results = json.load(f)
+                finally:
+                    # Make sure to close the file before trying to delete it
+                    try:
+                        os.unlink(temp_file.name)
+                    except Exception as e:
+                        logger.warning(f"Could not delete temporary file {temp_file.name}: {str(e)}")
         else:
             logger.error("Assistant did not provide results file")
             raise Exception("Assistant did not generate results file")
@@ -459,6 +348,82 @@ def detect_data_errors_with_code_interpreter(schema_file: str, data_file: str) -
             
     except Exception as e:
         logger.error(f"Error in detect_data_errors_with_code_interpreter: {str(e)}", exc_info=True)
+        raise
+
+def detect_data_errors_with_code_interpreter_detailed(data_file: str, issues: List[Dict]) -> str:
+    """
+    Uses OpenAI Code Interpreter to analyze data quality issues and create a detailed CSV report.
+    
+    Args:
+        data_file: Path to the CSV data file
+        issues: List of dictionaries containing detected issues with their descriptions
+        
+    Returns:
+        Path to the generated CSV file containing detailed error analysis
+    """
+    logger.info(f"Starting detailed error detection with Code Interpreter for file: {data_file}")
+    
+    assistant_service = AssistantService()
+    
+    try:
+        # Create assistant with files
+        assistant, file_ids = assistant_service.create_assistant_with_files(
+            name="Data Error Analyzer",
+            instructions="""You are a data quality analysis assistant. Your task is to:
+            1. Read the provided data file
+            2. For each issue in the list provided, write code to detect rows that have that issue
+            3. Create a CSV file where:
+               - Each row corresponds to a row in the original data
+               - Each column corresponds to an issue
+               - Values are True/False indicating if the issue exists in that row
+            4. Save and attach the results CSV file
+            
+            Make sure to handle edge cases and potential errors gracefully.""",
+            files=[data_file]
+        )
+        
+        # Format issues for the message
+        issues_text = "\n".join([f"{i+1}. {issue['description']}" for i, issue in enumerate(issues)])
+        
+        # Run conversation
+        response = assistant_service.run_conversation(
+            assistant_id=assistant.id,
+            message=f"""Please analyze the data file and create a detailed error report CSV.
+
+For each row in the data, check for these issues:
+
+{issues_text}
+
+Create a CSV file with these columns:
+1. row_index: The index of the row from the original file
+2. One column for each issue, named issue_1, issue_2, etc., containing True/False
+
+Please write Python code to:
+1. Read the data file
+2. Create functions to detect each issue
+3. Apply those functions to each row
+4. Create and save the results CSV
+5. Make sure to handle potential errors (null values, type mismatches, etc.)
+
+Name the output file 'error_analysis_results.csv'."""
+        )
+        
+        if response["file_id"]:
+            # Download and save the results file
+            results_file_path = Path(data_file).parent / "error_analysis_results.csv"
+            assistant_service.download_file(response["file_id"], str(results_file_path))
+            logger.info(f"Successfully saved error analysis results to: {results_file_path}")
+        else:
+            logger.error("Assistant did not provide results file")
+            raise Exception("Assistant did not generate a results file")
+        
+        # Clean up resources
+        assistant_service.cleanup_resources(assistant.id, file_ids)
+        
+        return str(results_file_path)
+            
+    except Exception as e:
+        logger.error(f"Error in detect_data_errors_with_code_interpreter_detailed: {str(e)}", exc_info=True)
         raise
 
 def cleanup_data_with_code_interpreter(schema_file: str, data_file: str, cleanup_operations: List[Dict], thread_id: str = None) -> Tuple[str, List[str]]:

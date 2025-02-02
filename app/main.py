@@ -6,7 +6,7 @@ import os
 import re
 from fastapi.security import APIKeyHeader
 from .validation import validate_data_against_schema
-from .error_detection import detect_data_errors, get_data_quality_report, cleanup_data_with_code_interpreter
+from .error_detection import get_data_quality_report, cleanup_data_with_code_interpreter
 from .cleanup import perform_cleanup_sequence
 from fastapi.responses import FileResponse
 from app.error_detection import logger
