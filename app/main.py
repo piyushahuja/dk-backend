@@ -6,9 +6,10 @@ import os
 import re
 from fastapi.security import APIKeyHeader
 from .validation import validate_data_against_schema
-from .error_detection import detect_data_errors, get_data_quality_report
+from .error_detection import detect_data_errors, get_data_quality_report, cleanup_data_with_code_interpreter
 from .cleanup import perform_cleanup_sequence
 from fastapi.responses import FileResponse
+from app.error_detection import logger
 
 app = FastAPI()
 
@@ -102,15 +103,24 @@ async def detect_errors(request: Dict) -> Dict:
     Detect errors in a data file and return a comprehensive quality report.
     
     Args:
-        request: Dict containing schema_file_id and data_file_id
+        request: Dict containing:
+            - schema_file_id: ID of the schema file
+            - data_file_id: ID of the data file
+            - use_code_interpreter: Optional boolean to use OpenAI Code Interpreter instead of generating code
 
     Returns:
         Dict containing error detection results in a structured format
     """
+    logger.info(f"Received error detection request: {request}")
+    
     schema_file_id = request["schema_file_id"]
     data_file_id = request["data_file_id"]
+    use_code_interpreter = request.get("use_code_interpreter", True)
+    
+    logger.debug(f"Processing files: schema={schema_file_id}, data={data_file_id}")
     
     if schema_file_id not in file_storage or data_file_id not in file_storage:
+        logger.warning(f"File not found: schema={schema_file_id}, data={data_file_id}")
         raise HTTPException(status_code=404, detail="File not found")
 
     # Verify files still exist and haven't been tampered with
@@ -120,13 +130,16 @@ async def detect_errors(request: Dict) -> Dict:
     try:
         quality_report = get_data_quality_report(
             str(file_storage[schema_file_id]),
-            str(file_storage[data_file_id])
+            str(file_storage[data_file_id]),
+            use_code_interpreter=use_code_interpreter
         )
+        logger.info("Error detection completed successfully")
         return {
             "status": "success",
             **quality_report
         }
     except Exception as e:
+        logger.error(f"Error during error detection: {str(e)}", exc_info=True)
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.post("/cleanup")
@@ -136,7 +149,8 @@ async def cleanup_data(request: Dict) -> Dict:
     
     Args:
         request: Dict containing:
-            - file_id: ID of the file to clean
+            - data_file_id: ID of the file to clean
+            - schema_file_id: ID of schema file (required when use_code_interpreter=True)
             - cleanup_operations: List of cleanup operations to perform in sequence
                 [
                     {
@@ -145,37 +159,66 @@ async def cleanup_data(request: Dict) -> Dict:
                     },
                     ...
                 ]
+            - use_code_interpreter: Optional boolean to use OpenAI Code Interpreter instead of generating code
+            - thread_id: Optional ID of existing thread from validation (only used with Code Interpreter)
             
     Returns:
         Dict containing:
             - new_file_id: ID of the cleaned file
             - changes_made: List of changes made by each operation
     """
-    file_id = request.get("file_id")
-    cleanup_operations = request.get("cleanup_operations")
+    logger.info(f"Received cleanup request: {request}")
     
-    if not file_id or not cleanup_operations:
-        raise HTTPException(status_code=400, detail="Missing file_id or cleanup_operations")
+    data_file_id = request.get("data_file_id")
+    cleanup_operations = request.get("cleanup_operations")
+    use_code_interpreter = request.get("use_code_interpreter", True)
+    thread_id = request.get("thread_id") if use_code_interpreter else None
+    
+    logger.debug(f"Processing cleanup for file: {data_file_id}")
+    
+    if not data_file_id or not cleanup_operations:
+        logger.warning("Missing required parameters")
+        raise HTTPException(status_code=400, detail="Missing data_file_id or cleanup_operations")
     
     if not isinstance(cleanup_operations, list):
         raise HTTPException(status_code=400, detail="cleanup_operations must be a list")
     
-    if file_id not in file_storage:
-        raise HTTPException(status_code=404, detail="File not found")
+    if data_file_id not in file_storage:
+        raise HTTPException(status_code=404, detail="Data file not found")
     
-    if not file_storage[file_id].exists():
-        raise HTTPException(status_code=404, detail="File not found or has been removed")
+    if not file_storage[data_file_id].exists():
+        raise HTTPException(status_code=404, detail="Data file not found or has been removed")
     
     try:
-        # Perform all cleanup operations in sequence
-        cleaned_file_path, changes_made = perform_cleanup_sequence(
-            str(file_storage[file_id]),
-            cleanup_operations
-        )
+        if use_code_interpreter:
+            schema_file_id = request.get("schema_file_id")
+            if not schema_file_id:
+                logger.warning("Missing schema_file_id for Code Interpreter cleanup")
+                raise HTTPException(status_code=400, detail="schema_file_id is required when using Code Interpreter")
+            if schema_file_id not in file_storage:
+                raise HTTPException(status_code=404, detail="Schema file not found")
+            if not file_storage[schema_file_id].exists():
+                raise HTTPException(status_code=404, detail="Schema file not found or has been removed")
+                
+            # Use Code Interpreter version
+            cleaned_file_path, changes_made = cleanup_data_with_code_interpreter(
+                schema_file=str(file_storage[schema_file_id]),
+                data_file=str(file_storage[data_file_id]),
+                cleanup_operations=cleanup_operations,
+                thread_id=thread_id
+            )
+        else:
+            # Use existing code generation version
+            cleaned_file_path, changes_made = perform_cleanup_sequence(
+                str(file_storage[data_file_id]),
+                cleanup_operations
+            )
+        
+        logger.info("Cleanup completed successfully")
         
         # Generate new file_id for final cleaned file
         new_file_id = str(uuid.uuid4())
-        file_storage[new_file_id] = cleaned_file_path
+        file_storage[new_file_id] = Path(cleaned_file_path)
         
         return {
             "status": "success",
@@ -183,6 +226,7 @@ async def cleanup_data(request: Dict) -> Dict:
             "changes_made": changes_made
         }
     except Exception as e:
+        logger.error(f"Error during cleanup: {str(e)}", exc_info=True)
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.get("/download/{file_id}")

@@ -4,47 +4,115 @@ import pandas as pd
 from openai import OpenAI
 import tempfile
 import os
+import logging
 
-def parse_llm_json_response(response: str, expect_python: bool = False) -> any:
+logger = logging.getLogger(__name__)
+
+def parse_natural_language_response(response: str) -> dict:
     """
-    Parses JSON or Python code from LLM responses that may be wrapped in markdown code fences.
+    Parse the assistant's response into our expected JSON schema.
+    Handles both markdown format and JSON format.
     
-    Args:
-        response: String response from LLM, potentially containing markdown code fences
-        expect_python: If True, looks for Python code block instead of JSON
-        
+    Example inputs:
+    '''
+    1. **Missing Values**:
+       - **Description**: Several columns have missing values...
+       - **Count**: 481 instances.
+       - **Affected Rows**: All rows from index 0 to 98.
+       - **Suggested Fix**: Ensure all required fields...
+    '''
+    
+    or
+    
+    ```json
+    [
+        {
+            "type": "Missing values",
+            "count": 13,
+            "rows": [5, 9, 12, 13, 22],
+            "description": "The column 'Industry' contains...",
+            "suggested_fix": "Consider imputing missing values..."
+        }
+    ]
+    ```
+    
     Returns:
-        If expect_python=False: Parsed JSON data
-        If expect_python=True: Python code as string
-        
-    Example:
-        Input: '```json\n["item1", "item2"]\n```'
-        Output: ['item1', 'item2']
-        
-        Input: '```python\ndef my_function():\n    pass\n```'
-        Output: 'def my_function():\n    pass'
+        {
+            "errors": [
+                {
+                    "type": "Missing Values",
+                    "count": 481,
+                    "description": "Several columns have missing values...",
+                    "suggested_fix": "Ensure all required fields..."
+                },
+                ...
+            ]
+        }
     """
-    # First try direct JSON parsing if we're not expecting Python
-    if not expect_python:
-        try:
-            return json.loads(response)
-        except json.JSONDecodeError:
-            pass
+    import re
     
-    # Look for content between code fences
-    pattern = r'```(?:python|json)?\n(.*?)\n```' if expect_python else r'```(?:json)?\n(.*?)\n```'
-    code_block_match = re.search(pattern, response, re.DOTALL)
-    
-    if code_block_match:
-        content = code_block_match.group(1)
-        if expect_python:
-            return content
+    # First try to find and parse JSON in the response
+    json_match = re.search(r'```json\n(.*?)\n```', response, re.DOTALL)
+    if json_match:
         try:
-            return json.loads(content)
+            json_content = json_match.group(1)
+            # Parse the JSON array and convert to our format
+            json_data = json.loads(json_content)
+            return {"errors": json_data}
         except json.JSONDecodeError as e:
-            raise ValueError(f"Failed to parse JSON from code block: {e}")
+            logger.warning(f"Found JSON block but failed to parse: {str(e)}")
     
-    raise ValueError("No valid code block found in response")
+    # If no valid JSON found, try markdown format
+    # Initialize result structure
+    result = {"errors": []}
+    
+    # Split into sections by numbered items
+    sections = re.split(r'\d+\.\s+\*\*', response)[1:]  # Skip empty first split
+    
+    if not sections:  # If no markdown sections found
+        logger.warning("No markdown sections or JSON found in response")
+        return result
+    
+    for section in sections:
+        try:
+            # Extract the issue type (everything before the first ":")
+            type_match = re.match(r'([^:]+):', section)
+            if not type_match:
+                continue
+            issue_type = type_match.group(1).strip('*')
+            
+            # Extract other fields using regex
+            count_match = re.search(r'\*\*Count\*\*:\s*(\d+)', section)
+            description_match = re.search(r'\*\*Description\*\*:\s*([^*\n]+)', section)
+            fix_match = re.search(r'\*\*Suggested Fix\*\*:\s*([^*\n]+)', section)
+            
+            error = {
+                "type": issue_type,
+                "count": int(count_match.group(1)) if count_match else 0,
+                "description": description_match.group(1).strip() if description_match else "",
+                "suggested_fix": fix_match.group(1).strip() if fix_match else ""
+            }
+            
+            result["errors"].append(error)
+            
+        except Exception as e:
+            logger.warning(f"Failed to parse section: {section}. Error: {str(e)}")
+            continue
+    
+    return result
+
+def parse_llm_json_response(response: str) -> dict:
+    """Parse the LLM response, handling both JSON and natural language formats."""
+    try:
+        # First try to parse as JSON
+        return json.loads(response)
+    except json.JSONDecodeError:
+        # If that fails, try to parse as natural language
+        try:
+            return parse_natural_language_response(response)
+        except Exception as e:
+            logger.error(f"Failed to parse response in both JSON and natural language formats: {str(e)}")
+            raise ValueError("Could not parse response in any supported format")
 
 def generate_and_run_data_checks(issues: list, data_file: str, sample_size: int = 5) -> dict:
     """
