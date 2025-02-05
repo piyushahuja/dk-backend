@@ -132,6 +132,9 @@ def get_data_quality_report(schema_file: str, data_file: str, use_code_interpret
         detailed_results = parse_error_analysis_csv(results_csv)
 
         logger.info(f"Detailed results: {detailed_results}")
+
+        # Read the original data file to get full row data
+        data_df = pd.read_csv(data_file)
         
         # Transform errors into API response format
         api_response = {
@@ -145,12 +148,22 @@ def get_data_quality_report(schema_file: str, data_file: str, use_code_interpret
             # Find matching detailed result
             detailed_result = next((r for r in detailed_results if r["id"] == issue_id), None)
             affected_rows = detailed_result["rows"] if detailed_result else []
+
+            # Get the full row data for affected rows
+            full_rows = []
+            for row_idx in affected_rows:
+                if 0 <= row_idx < len(data_df):
+                    row_data = data_df.iloc[row_idx].to_dict()
+                    full_rows.append({
+                        "index": row_idx,
+                        "data": row_data
+                    })
             
             api_response["errors"].append({
                 "id": i,
                 "type": issue["type"],
                 "count": len(affected_rows),
-                "rows": affected_rows,
+                "rows": full_rows,
                 "description": issue["description"]
             })
             
