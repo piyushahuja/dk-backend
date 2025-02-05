@@ -11,6 +11,7 @@ import logging
 from logging.handlers import RotatingFileHandler
 from .assistant_service import AssistantService
 import tempfile
+import uuid
 
 load_dotenv()
 
@@ -474,7 +475,8 @@ Make sure to save and attach the cleaned file when you're done.""",
         
         if response["file_id"]:
             # Download and save the cleaned file
-            cleaned_file_path = Path(data_file).parent / f"cleaned_{Path(data_file).name}"
+            file_uuid = str(uuid.uuid4())
+            cleaned_file_path = Path(data_file).parent / f"cleaned_{file_uuid}_{Path(data_file).name}"
             assistant_service.download_file(response["file_id"], str(cleaned_file_path))
             logger.info(f"Successfully saved cleaned file to: {cleaned_file_path}")
         else:
