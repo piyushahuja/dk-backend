@@ -32,13 +32,14 @@ console_handler.setFormatter(log_format)
 logger.addHandler(file_handler)
 logger.addHandler(console_handler)
 
-def describe_data_quality_issues(schema_file: str, data_file: str) -> List[str]:
+def describe_data_quality_issues(schema_file: str, data_file: str, custom_prompt: str = None) -> List[str]:
     """
     Uses LLM to describe data quality issues in natural language.
     
     Args:
         schema_file: Path to the XLSX schema file
         data_file: Path to the CSV data file
+        custom_prompt: Optional additional instructions for error detection
     
     Returns:
         List of strings describing data quality issues found
@@ -73,14 +74,20 @@ def describe_data_quality_issues(schema_file: str, data_file: str) -> List[str]:
     5. Outliers or suspicious values
     6. Any other data quality concerns
 
-    This is a sample from a larger dataset. You must extrapolate the issues to the entire dataset.
+    This is a sample from a larger dataset. You must extrapolate the issues to the entire dataset."""
+
+    # Add custom prompt if provided
+    if custom_prompt:
+        prompt += f"\n\nAdditional instructions:\n{custom_prompt}"
+
+    prompt += """
     
     Return your response as a JSON array of objects, where each object contains the following fields:
-    {{
+    {
         "type": "what the issue is",
         "description": "description of the issue",
         "solution": "one line suggested solution to the issue (this should be a data cleaning solution)"
-    }}
+    }
     """
 
     response = client.chat.completions.create(
@@ -93,7 +100,7 @@ def describe_data_quality_issues(schema_file: str, data_file: str) -> List[str]:
     return json_response
 
 
-def get_data_quality_report(schema_file: str, data_file: str, use_code_interpreter: bool = False) -> dict:
+def get_data_quality_report(schema_file: str, data_file: str, use_code_interpreter: bool = False, custom_prompt: str = None) -> dict:
     """
     Generate a comprehensive data quality report including issues and cleanup options.
     
@@ -101,6 +108,7 @@ def get_data_quality_report(schema_file: str, data_file: str, use_code_interpret
         schema_file (str): Path to the schema file (Excel format)
         data_file (str): Path to the data file (CSV format)
         use_code_interpreter (bool): If True, uses OpenAI Code Interpreter instead of generating code
+        custom_prompt (str): Optional additional instructions for error detection
         
     Returns:
         dict: A report containing detected errors and cleanup options
@@ -118,7 +126,8 @@ def get_data_quality_report(schema_file: str, data_file: str, use_code_interpret
         # First get the issues using natural language description
         issues = describe_data_quality_issues(
             schema_file=schema_file,
-            data_file=data_file
+            data_file=data_file,
+            custom_prompt=custom_prompt
         )
 
         logger.info(f"Issues: {issues}")
@@ -188,7 +197,8 @@ def get_data_quality_report(schema_file: str, data_file: str, use_code_interpret
         cleanup_options = generate_cleanup_options(
             schema_file=schema_file,
             data_file=data_file,
-            issues=issues
+            issues=issues,
+            custom_prompt=custom_prompt
         )
         
         # Run the checks to find problematic rows

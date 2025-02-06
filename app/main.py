@@ -127,7 +127,8 @@ async def detect_errors(request: Dict) -> Dict:
             - schema_file_id: ID of the schema file
             - data_file_id: ID of the data file
             - use_code_interpreter: Optional boolean to use OpenAI Code Interpreter instead of generating code
-
+            - prompt: Optional string with additional error detection instructions
+            
     Returns:
         Dict containing error detection results in a structured format
     """
@@ -136,6 +137,7 @@ async def detect_errors(request: Dict) -> Dict:
     schema_file_id = request["schema_file_id"]
     data_file_id = request["data_file_id"]
     use_code_interpreter = request.get("use_code_interpreter", False)
+    custom_prompt = request.get("prompt")
     
     logger.debug(f"Processing files: schema={schema_file_id}, data={data_file_id}")
     
@@ -151,7 +153,8 @@ async def detect_errors(request: Dict) -> Dict:
         quality_report = get_data_quality_report(
             str(file_storage[schema_file_id]),
             str(file_storage[data_file_id]),
-            use_code_interpreter=use_code_interpreter
+            use_code_interpreter=use_code_interpreter,
+            custom_prompt=custom_prompt
         )
         logger.info("Error detection completed successfully")
         return {
@@ -194,7 +197,7 @@ async def cleanup_data(request: Dict) -> Dict:
     cleanup_operations = request.get("cleanup_operations")
     use_code_interpreter = request.get("use_code_interpreter", True)
     thread_id = request.get("thread_id") if use_code_interpreter else None
-    custom_cleanup_prompt = request.get("custom_cleanup_prompt")
+    custom_cleanup_prompt = request.get("prompt")
     
     logger.debug(f"Processing cleanup for file: {data_file_id}")
     
