@@ -5,12 +5,16 @@ import uuid
 import os
 import re
 from fastapi.security import APIKeyHeader
+from .helper import parse_llm_json_response
 from .validation import validate_data_against_schema
 from .error_detection import get_data_quality_report, cleanup_data_with_code_interpreter
 from .cleanup import perform_cleanup_sequence
 from fastapi.responses import FileResponse
 from app.error_detection import logger
 from fastapi.middleware.cors import CORSMiddleware
+from .assistant_manager import AssistantManager
+from .assistant_service import AssistantService
+
 app = FastAPI()
 
 app.add_middleware(
@@ -280,4 +284,86 @@ async def download_file(file_id: str):
             media_type="text/csv"
         )
     except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/detect_error_code")
+async def detect_error_code(request: Dict) -> Dict:
+    """
+    Generate and run code to detect specific errors in a data file.
+    
+    Args:
+        request: Dict containing:
+            - file_id: ID of the data file to analyze
+            - error_description: Description of the error to detect
+
+    Returns:
+        Dict containing:
+            - affected_rows: List of row indices where the error was found
+            - code_description: Description of the code used to detect the error
+    """
+
+    file_id = request.get("file_id")
+    error_description = request.get("error_description")
+
+    print(f"File ID: {file_id}")
+    print(f"Error Description: {error_description}")
+
+    if file_id not in file_storage:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    
+    if not file_storage[file_id].exists():
+        raise HTTPException(status_code=404, detail="File not found or has been removed")
+    
+    assistant_manager = AssistantManager()
+    assistant_service = AssistantService()
+    
+    try:
+        # Get or create assistant and thread
+        assistant_id, thread_id = assistant_manager.get_assistant_and_thread(file_id)
+        
+        if not assistant_id:
+            # Create new assistant with the file
+            assistant, file_ids = assistant_service.create_assistant_with_files(
+                name="Error Detector",
+                instructions="""You are a data error detection assistant. Your task is to:
+                1. Write Python code to detect specific data quality issues
+                1a. Do this intelligently. Clean and transform the data if necessary.
+                2. Return both the code used and the row indices where issues were found
+                3. Handle edge cases and errors gracefully""",
+                files=[str(file_storage[file_id])]
+            )
+            
+            # Store the IDs for future use
+            assistant_manager.set_assistant_and_thread(file_id, assistant.id, None)
+            assistant_id = assistant.id
+        
+        # Run the conversation
+        response = assistant_service.run_conversation(
+            assistant_id=assistant_id,
+            message=f"""Please write Python code to detect the following error in the data file:
+            
+            {error_description}
+            
+            Return your response as a JSON object with:
+            1. affected_rows: List of row indices where the error was found
+            2. code_description: Brief description of how the code you wrote works""",
+            thread_id=thread_id
+        )
+
+        content = parse_llm_json_response(response["message"])
+        print(f"Content: {content}")
+        
+        # Parse the response
+        if isinstance(content, dict):
+            return {
+                "status": "success",
+                **content
+            }
+
+        else:
+            raise Exception("Invalid response format from assistant")
+            
+    except Exception as e:
+        logger.error(f"Error in detect_error_code: {str(e)}", exc_info=True)
         raise HTTPException(status_code=400, detail=str(e)) 

@@ -303,3 +303,36 @@ def test_cleanup_and_download_workflow():
     content = download_response.content.decode()
     assert len(content) > 0
     assert content.count('\n') > 0  # Should have at least header row'''
+
+'''def test_detect_error_code():
+    # 1. Upload test data file
+    data_path = Path("tests/fixtures/test_no_err_col.csv")
+    with open(data_path, "rb") as f:
+        data_response = client.post("/upload", 
+            files={"file": ("test_no_err_col.csv", f, "text/csv")}
+        )
+    assert data_response.status_code == 200
+    file_id = data_response.json()["file_id"]
+    
+    # 2. Test error code detection
+    error_description = "In some rows, the phone number column contains non-numeric values"
+    response = client.post(
+        f"/detect_error_code",
+        json={"error_description": error_description, "file_id": file_id}
+    )
+    
+    print("\nError Detection Response:")
+    print(f"Status Code: {response.status_code}")
+    print(f"Response JSON: {response.json()}")
+    
+    assert response.status_code == 200
+    assert response.json()["status"] == "success"
+    assert "affected_rows" in response.json()
+    assert "code_description" in response.json()
+    assert isinstance(response.json()["affected_rows"], list)
+    assert isinstance(response.json()["code_description"], str)
+    
+    # Print detailed results for debugging
+    print("\nDetailed Results:")
+    print(f"Affected Rows: {response.json()['affected_rows']}")
+    print(f"Code Description: {response.json()['code_description']}")'''

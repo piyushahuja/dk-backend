@@ -124,7 +124,6 @@ Perform comprehensive error detection and receive a detailed quality report.
 	"errors": [
 		{
 			"type": "string", // Short identifier for the issue type
-			"count": 42, // Number of rows affected by this issue
 			"description": "string" // Detailed description of the issue
 		}
 	],
@@ -179,6 +178,31 @@ Download a file using its file ID.
 
 - File download response (CSV file)
 - Content-Type: text/csv
+
+### POST /detect_error_code
+
+Generate and run code to detect specific errors in a data file using AI assistance.
+
+**Request:**
+
+```json
+{
+	"file_id": "string", // UUID of the data file to analyze
+	"error_description": "string" // Description of the error to detect
+}
+```
+
+**Response:**
+
+```json
+{
+	"status": "success",
+	"affected_rows": [
+		// Array of row indices where the error was found
+	],
+	"code_description": "string" // Description of the code used to detect the error
+}
+```
 
 ### Error Responses
 

@@ -105,148 +105,31 @@ def describe_data_quality_issues(schema_file: str, data_file: str, custom_prompt
 
 def get_data_quality_report(schema_file: str, data_file: str, use_code_interpreter: bool = False, custom_prompt: str = None) -> dict:
     """
-    Generate a comprehensive data quality report including issues and cleanup options.
-    
-    Args:
-        schema_file (str): Path to the schema file (Excel format)
-        data_file (str): Path to the data file (CSV format)
-        use_code_interpreter (bool): If True, uses OpenAI Code Interpreter instead of generating code
-        custom_prompt (str): Optional additional instructions for error detection
-        
-    Returns:
-        dict: A report containing detected errors and cleanup options
+    Generate a data quality report with identified issues (without row-level analysis).
     """
-    if not os.path.exists(schema_file):
-        raise FileNotFoundError(f"Schema file not found: {schema_file}")
-    if not os.path.exists(data_file):
-        raise FileNotFoundError(f"Data file not found: {data_file}")
+    issues = describe_data_quality_issues(
+        schema_file=schema_file,
+        data_file=data_file,
+        custom_prompt=custom_prompt
+    )
     
-    use_code_interpreter = True
-
-    print(f"use_code_interpreter: {use_code_interpreter}")
+    api_response = {
+        "errors": [],
+        "cleanupOptions": []
+    }
     
-    if use_code_interpreter:
-        # First get the issues using natural language description
-        issues = describe_data_quality_issues(
-            schema_file=schema_file,
-            data_file=data_file,
-            custom_prompt=custom_prompt
-        )
-
-        logger.info(f"Issues: {issues}")
-        
-        # Then get detailed row-level analysis
-        results_csv = detect_data_errors_with_code_interpreter_detailed(
-            data_file=data_file,
-            issues=issues
-        )
-
-        logger.info(f"Results CSV returned")
-        
-        # Parse the detailed results
-        detailed_results = parse_error_analysis_csv(results_csv)
-
-        logger.info(f"Detailed results: {detailed_results}")
-
-        # Read the original data file to get full row data
-        data_df = pd.read_csv(data_file)
-        
-        # Transform errors into API response format
-        api_response = {
-            "errors": [],
-            "cleanupOptions": []
-        }
-        
-        # Match detailed results with original issues
-        for i, issue in enumerate(issues):
-            issue_id = f"issue_{i+1}"
-            # Find matching detailed result
-            detailed_result = next((r for r in detailed_results if r["id"] == issue_id), None)
-            affected_rows = detailed_result["rows"] if detailed_result else []
-
-            # Get the full row data for affected rows
-            full_rows = []
-            for row_idx in affected_rows:
-                if 0 <= row_idx < len(data_df):
-                    row_data = data_df.iloc[row_idx].to_dict()
-                    full_rows.append({
-                        "index": row_idx,
-                        "data": row_data
-                    })
-            
-            api_response["errors"].append({
-                "id": i,
-                "type": issue["type"],
-                "count": len(affected_rows),
-                "rows": full_rows,
-                "description": issue["description"]
-            })
-            
-            api_response["cleanupOptions"].append({
-                "id": i,
-                "description": issue["solution"]
-            })
-            
-        return api_response
-    else:
-        # Use existing code generation version
-        # Get the natural language description of issues using existing LLM function
-        issues = describe_data_quality_issues(
-            schema_file=schema_file,
-            data_file=data_file
-        )
-        
-        '''# Generate cleanup options based on the detected issues
-        cleanup_options = generate_cleanup_options(
-            schema_file=schema_file,
-            data_file=data_file,
-            issues=issues,
-            custom_prompt=custom_prompt
-        )
-        
-        # Run the checks to find problematic rows
-        results = generate_and_run_data_checks(
-            issues=issues,
-            data_file=data_file
-        )'''
-        
-        # Transform results into the API response format
-        api_response = {
-            "errors": [],
-            "cleanupOptions": []
-        }
-        
-        '''for issue, problem_rows in results.items():
-            if isinstance(problem_rows, str) and problem_rows.startswith("Error"):
-                continue
-            
-            error_count = len(problem_rows) if isinstance(problem_rows, pd.DataFrame) else 0
-            
-            # Get the full issue description from the original issues list
-            matching_issue = next(
-                (i for i in issues if i["issue"].startswith(issue)),
-                None
-            )
-            
-            if matching_issue:
-                api_response["errors"].append({
-                    "type": issue,
-                    "count": error_count,
-                    "description": matching_issue["issue"]
-                })'''
-        
-        for i in range(len(issues)):
-            api_response["errors"].append({
-                "id": i,
-                "type": issues[i]["type"],
-                "description": issues[i]["description"]
-            })
-            api_response["cleanupOptions"].append({
-                "id": i,
-                "description": issues[i]["solution"]
-            })
-        
-        return api_response
+    for i, issue in enumerate(issues):
+        api_response["errors"].append({
+            "id": i,
+            "type": issue["type"],
+            "description": issue["description"]
+        })
+        api_response["cleanupOptions"].append({
+            "id": i,
+            "description": issue["solution"]
+        })
+    
+    return api_response
 
 def generate_cleanup_options(schema_file: str, data_file: str, issues: list) -> list:
     """
