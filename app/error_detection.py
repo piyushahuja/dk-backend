@@ -88,7 +88,10 @@ def describe_data_quality_issues(schema_file: str, data_file: str) -> List[str]:
         messages=[{"role": "user", "content": prompt}]
     )
     
-    return parse_llm_json_response(response.choices[0].message.content)
+    json_response = parse_llm_json_response(response.choices[0].message.content)
+    print("Returned json_response: ", json_response)
+    return json_response
+
 
 def get_data_quality_report(schema_file: str, data_file: str, use_code_interpreter: bool = False) -> dict:
     """
@@ -123,7 +126,7 @@ def get_data_quality_report(schema_file: str, data_file: str, use_code_interpret
         # Then get detailed row-level analysis
         results_csv = detect_data_errors_with_code_interpreter_detailed(
             data_file=data_file,
-            issues=issues["errors"]
+            issues=issues
         )
 
         logger.info(f"Results CSV returned")
@@ -143,7 +146,7 @@ def get_data_quality_report(schema_file: str, data_file: str, use_code_interpret
         }
         
         # Match detailed results with original issues
-        for i, issue in enumerate(issues["errors"]):
+        for i, issue in enumerate(issues):
             issue_id = f"issue_{i+1}"
             # Find matching detailed result
             detailed_result = next((r for r in detailed_results if r["id"] == issue_id), None)
@@ -219,15 +222,15 @@ def get_data_quality_report(schema_file: str, data_file: str, use_code_interpret
                     "description": matching_issue["issue"]
                 })'''
         
-        for i in range(len(issues["errors"])):
+        for i in range(len(issues)):
             api_response["errors"].append({
                 "id": i,
-                "type": issues["errors"][i]["type"],
-                "description": issues["errors"][i]["description"]
+                "type": issues[i]["type"],
+                "description": issues[i]["description"]
             })
             api_response["cleanupOptions"].append({
                 "id": i,
-                "description": issues["errors"][i]["solution"]
+                "description": issues[i]["solution"]
             })
         
         return api_response
@@ -287,7 +290,10 @@ Guidelines:
         messages=[{"role": "user", "content": prompt}]
     )
     
-    return parse_llm_json_response(response.choices[0].message.content)
+    json_response = parse_llm_json_response(response.choices[0].message.content)
+    print("Returned json_response: ", json_response)
+    return json_response
+
 
 def detect_data_errors_with_code_interpreter(schema_file: str, data_file: str) -> List[Dict]:
     """Uses OpenAI Code Interpreter to detect errors in data values."""

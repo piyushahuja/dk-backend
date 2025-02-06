@@ -5,6 +5,7 @@ from openai import OpenAI
 import json
 from dotenv import load_dotenv
 from .assistant_service import AssistantService
+from .helper import parse_llm_json_response
 
 load_dotenv()
 
@@ -147,7 +148,7 @@ def validate_data_against_schema_chat(schema_file: str, data_file: str) -> Dict:
     
     # Convert to string representations
     schema_str = schema_df.to_string()
-    data_sample = data_df.head().to_string()
+    data_sample = data_df.head(20).to_string()
     
     client = OpenAI()
     
@@ -165,17 +166,15 @@ Focus only on schema-level validation:
 2. Verify that the columns have the correct data types as specified in the schema
 3. Validate any field length constraints defined in the schema
 
-Do not validate individual row values at this time.
-
 Make sure you only return unique errors.
 
 Return your response as a JSON object with this structure:
 {{
     "is_valid": false,
     "errors": [
-        "Required column 'user_id' is missing from the data file",
-        "Column 'age' is defined as INTEGER in schema but contains string data",
-        "Column 'email' is defined as VARCHAR(255) but contains values longer than 255 characters"
+        "Column 'customer_id' missing in data file",
+        "Expected date format YYYY-MM-DD for 'purchase_date'",
+        "Invalid data type in 'quantity' column (expected number)"
     ]
 }}"""
 
@@ -186,6 +185,13 @@ Return your response as a JSON object with this structure:
         ],
     )
 
-    print(response)
-    
-    return json.loads(response.choices[0].message.content) 
+    print(response.choices[0].message.content)
+
+    try:
+        # Use the parse_llm_json_response from helper
+        json_response = parse_llm_json_response(response.choices[0].message.content)
+        print("Returned json_response: ", json_response)
+        return json_response
+    except Exception as e:
+        print(f"Error parsing response: {str(e)}")
+        raise

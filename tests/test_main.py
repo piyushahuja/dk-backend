@@ -87,12 +87,12 @@ def test_end_to_end_workflow():
     data_file_id = data_response.json()["file_id"]
 
     # 3. Test validation with uploaded files
-    '''validate_response = client.post("/validate_schema", json={
+    validate_response = client.post("/validate_schema", json={
         "schema_file_id": schema_file_id,
         "data_file_id": data_file_id
     })
     assert validate_response.status_code == 200
-    assert validate_response.json()["status"] == "success"'''
+    assert validate_response.json()["status"] == "success"
 
     # 4. Test error detection with uploaded files
     detect_response = client.post("/detect_errors", json={

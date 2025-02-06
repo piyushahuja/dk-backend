@@ -59,7 +59,8 @@ def parse_natural_language_response(response: str) -> dict:
             json_content = json_match.group(1)
             # Parse the JSON array and convert to our format
             json_data = json.loads(json_content)
-            return {"errors": json_data}
+            print(json_data)
+            return json_data
         except json.JSONDecodeError as e:
             logger.warning(f"Found JSON block but failed to parse: {str(e)}")
     
@@ -110,6 +111,7 @@ def parse_llm_json_response(response: str) -> dict:
     except json.JSONDecodeError:
         # If that fails, try to parse as natural language
         try:
+            print("Parsing natural language response")
             return parse_natural_language_response(response)
         except Exception as e:
             logger.error(f"Failed to parse response in both JSON and natural language formats: {str(e)}")
