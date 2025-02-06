@@ -163,8 +163,7 @@ First few rows of the data file:
 Please validate the structure of the data file against the schema file. 
 Focus only on schema-level validation:
 1. Check if all required fields from the schema exist in the data file
-2. Verify that the columns have the correct data types as specified in the schema
-3. Validate any field length constraints defined in the schema
+2. Check that no extra or misnamed columns are present in the data file
 
 Make sure you only return unique errors.
 
@@ -173,8 +172,7 @@ Return your response as a JSON object with this structure:
     "is_valid": false,
     "errors": [
         "Column 'customer_id' missing in data file",
-        "Expected date format YYYY-MM-DD for 'purchase_date'",
-        "Invalid data type in 'quantity' column (expected number)"
+        "Column 'extra_column' present in data file but not in schema"
     ]
 }}"""
 

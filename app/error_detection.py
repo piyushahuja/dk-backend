@@ -72,9 +72,12 @@ def describe_data_quality_issues(schema_file: str, data_file: str, custom_prompt
     3. Invalid characters or formats
     4. Inconsistent data patterns
     5. Outliers or suspicious values
-    6. Any other data quality concerns
+    6. Potential duplicates
+    7. Any other data quality concerns
 
-    This is a sample from a larger dataset. You must extrapolate the issues to the entire dataset."""
+    This is a sample from a larger dataset. You must extrapolate the issues to the entire dataset.
+    In particular, figure out what columns need to be checked for duplicates.
+    """
 
     # Add custom prompt if provided
     if custom_prompt:
