@@ -446,7 +446,7 @@ Name the output file 'error_analysis_results.csv'."""
         logger.error(f"Error in detect_data_errors_with_code_interpreter_detailed: {str(e)}", exc_info=True)
         raise
 
-def cleanup_data_with_code_interpreter(schema_file: str, data_file: str, cleanup_operations: List[Dict], thread_id: str = None) -> Tuple[str, List[str]]:
+def cleanup_data_with_code_interpreter(schema_file: str, data_file: str, cleanup_operations: List[Dict], thread_id: str = None, custom_cleanup_prompt: str = None) -> Tuple[str, List[str]]:
     """
     Uses OpenAI Code Interpreter to clean data based on selected operations.
     
@@ -455,6 +455,7 @@ def cleanup_data_with_code_interpreter(schema_file: str, data_file: str, cleanup
         data_file: Path to the CSV data file
         cleanup_operations: List of cleanup operations to perform
         thread_id: Optional ID of existing thread from validation
+        custom_cleanup_prompt: Optional custom instructions for cleanup
         
     Returns:
         Tuple containing:
@@ -481,14 +482,21 @@ def cleanup_data_with_code_interpreter(schema_file: str, data_file: str, cleanup
         # Format cleanup operations for the message
         operations_text = "\n".join([f"{i+1}. {op['description']}" for i, op in enumerate(cleanup_operations)])
         
+        # Build the message with optional custom prompt
+        message = f"""Please apply the following cleanup operations to the data file:
+
+{operations_text}"""
+
+        # Add custom cleanup instructions if provided
+        if custom_cleanup_prompt:
+            message += f"\n\nAdditional cleanup instructions:\n{custom_cleanup_prompt}"
+
+        message += "\n\nMake sure to save and attach the cleaned file when you're done."
+        
         # Run conversation
         response = assistant_service.run_conversation(
             assistant_id=assistant.id,
-            message=f"""Please apply the following cleanup operations to the data file:
-
-{operations_text}
-
-Make sure to save and attach the cleaned file when you're done.""",
+            message=message,
             thread_id=thread_id
         )
         

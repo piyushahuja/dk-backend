@@ -181,6 +181,7 @@ async def cleanup_data(request: Dict) -> Dict:
                 ]
             - use_code_interpreter: Optional boolean to use OpenAI Code Interpreter instead of generating code
             - thread_id: Optional ID of existing thread from validation (only used with Code Interpreter)
+            - custom_cleanup_prompt: Optional string with additional cleanup instructions
             
     Returns:
         Dict containing:
@@ -193,6 +194,7 @@ async def cleanup_data(request: Dict) -> Dict:
     cleanup_operations = request.get("cleanup_operations")
     use_code_interpreter = request.get("use_code_interpreter", True)
     thread_id = request.get("thread_id") if use_code_interpreter else None
+    custom_cleanup_prompt = request.get("custom_cleanup_prompt")
     
     logger.debug(f"Processing cleanup for file: {data_file_id}")
     
@@ -225,7 +227,8 @@ async def cleanup_data(request: Dict) -> Dict:
                 schema_file=str(file_storage[schema_file_id]),
                 data_file=str(file_storage[data_file_id]),
                 cleanup_operations=cleanup_operations,
-                thread_id=thread_id
+                thread_id=thread_id,
+                custom_cleanup_prompt=custom_cleanup_prompt
             )
         else:
             # Use existing code generation version
