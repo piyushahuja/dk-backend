@@ -301,7 +301,6 @@ async def detect_error_code(request: Dict) -> Dict:
             - affected_rows: List of row indices where the error was found
             - code_description: Description of the code used to detect the error
     """
-
     file_id = request.get("file_id")
     error_description = request.get("error_description")
 
@@ -310,49 +309,41 @@ async def detect_error_code(request: Dict) -> Dict:
 
     if file_id not in file_storage:
         raise HTTPException(status_code=404, detail="File not found")
-
     
     if not file_storage[file_id].exists():
         raise HTTPException(status_code=404, detail="File not found or has been removed")
     
-    assistant_manager = AssistantManager()
     assistant_service = AssistantService()
     
     try:
-        # Get or create assistant and thread
-        assistant_id, thread_id = assistant_manager.get_assistant_and_thread(file_id)
-        
-        if not assistant_id:
-            # Create new assistant with the file
-            assistant, file_ids = assistant_service.create_assistant_with_files(
-                name="Error Detector",
-                instructions="""You are a data error detection assistant. Your task is to:
-                1. Write Python code to detect specific data quality issues
-                1a. Do this intelligently. Clean and transform the data if necessary.
-                2. Return both the code used and the row indices where issues were found
-                3. Handle edge cases and errors gracefully""",
-                files=[str(file_storage[file_id])]
-            )
-            
-            # Store the IDs for future use
-            assistant_manager.set_assistant_and_thread(file_id, assistant.id, None)
-            assistant_id = assistant.id
+        # Create new assistant with the file
+        assistant, file_ids = assistant_service.create_assistant_with_files(
+            name="Error Detector",
+            instructions="""You are a data error detection assistant. Your task is to:
+            1. Write Python code to detect specific data quality issues
+            1a. Do this intelligently. Clean and transform the data if necessary.
+            2. Return both the code used and the row indices where issues were found
+            3. Handle edge cases and errors gracefully""",
+            files=[str(file_storage[file_id])]
+        )
         
         # Run the conversation
         response = assistant_service.run_conversation(
-            assistant_id=assistant_id,
+            assistant_id=assistant.id,
             message=f"""Please write Python code to detect the following error in the data file:
             
             {error_description}
             
             Return your response as a JSON object with:
             1. affected_rows: List of row indices where the error was found
-            2. code_description: Brief description of how the code you wrote works""",
-            thread_id=thread_id
+            2. code_description: Brief description of how the code you wrote works"""
         )
 
         content = parse_llm_json_response(response["message"])
         print(f"Content: {content}")
+        
+        # Clean up the assistant and files after use
+        assistant_service.cleanup_resources(assistant.id, file_ids)
         
         # Parse the response
         if isinstance(content, dict):
@@ -360,7 +351,6 @@ async def detect_error_code(request: Dict) -> Dict:
                 "status": "success",
                 **content
             }
-
         else:
             raise Exception("Invalid response format from assistant")
             

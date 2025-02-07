@@ -304,7 +304,7 @@ def test_cleanup_and_download_workflow():
     assert len(content) > 0
     assert content.count('\n') > 0  # Should have at least header row'''
 
-'''def test_detect_error_code():
+def test_detect_error_code():
     # 1. Upload test data file
     data_path = Path("tests/fixtures/test_no_err_col.csv")
     with open(data_path, "rb") as f:
@@ -335,4 +335,4 @@ def test_cleanup_and_download_workflow():
     # Print detailed results for debugging
     print("\nDetailed Results:")
     print(f"Affected Rows: {response.json()['affected_rows']}")
-    print(f"Code Description: {response.json()['code_description']}")'''
+    print(f"Code Description: {response.json()['code_description']}")
