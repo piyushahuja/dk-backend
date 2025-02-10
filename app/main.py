@@ -11,6 +11,10 @@ from .cleanup import perform_cleanup_sequence
 from fastapi.responses import FileResponse
 from app.error_detection import logger
 from fastapi.middleware.cors import CORSMiddleware
+from .assistant_manager import AssistantManager
+from .assistant_service import AssistantService
+import json
+
 app = FastAPI()
 
 app.add_middleware(
@@ -42,6 +46,33 @@ except Exception as e:
 
 # Store file_id to filepath mappings
 file_storage: Dict[str, Path] = {}
+STORAGE_FILE = Path("./uploads/file_storage.json")
+
+def load_file_storage():
+    """Load file_storage from disk if it exists."""
+    global file_storage
+    try:
+        if STORAGE_FILE.exists():
+            with open(STORAGE_FILE, 'r') as f:
+                # Convert stored strings back to Path objects
+                stored_data = json.load(f)
+                file_storage = {k: Path(v) for k, v in stored_data.items()}
+    except Exception as e:
+        logger.error(f"Error loading file storage: {str(e)}")
+        file_storage = {}
+
+def save_file_storage():
+    """Save file_storage to disk."""
+    try:
+        # Convert Path objects to strings for JSON serialization
+        stored_data = {k: str(v) for k, v in file_storage.items()}
+        with open(STORAGE_FILE, 'w') as f:
+            json.dump(stored_data, f, indent=2)
+    except Exception as e:
+        logger.error(f"Error saving file storage: {str(e)}")
+
+# Initialize storage from disk
+load_file_storage()
 
 def sanitize_filename(filename: str) -> str:
     """Sanitize filename to prevent path traversal attacks."""
@@ -76,6 +107,7 @@ async def upload_file(file: UploadFile = File(...)) -> Dict:
             f.write(content)
         
         file_storage[file_id] = file_path
+        save_file_storage()  # Persist the new file mapping
         return {"file_id": file_id}
     except Exception as e:
         if file_path.exists():
@@ -245,6 +277,7 @@ async def cleanup_data(request: Dict) -> Dict:
         # Generate new file_id for final cleaned file
         new_file_id = str(uuid.uuid4())
         file_storage[new_file_id] = Path(cleaned_file_path)
+        save_file_storage()  # Persist the new file mapping
         
         return {
             "status": "success",

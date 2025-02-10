@@ -6,8 +6,9 @@ import json
 from dotenv import load_dotenv
 from .assistant_service import AssistantService
 from .helper import parse_llm_json_response
+from pathlib import Path
 
-load_dotenv()
+load_dotenv(Path(__file__).parent / ".env")
 
 def validate_data_against_schema(schema_file: str, data_file: str, llm: bool = True, use_chat: bool = True) -> Dict:
     """
@@ -146,8 +147,10 @@ def validate_data_against_schema_chat(schema_file: str, data_file: str) -> Dict:
     # Convert to string representations
     schema_str = schema_df.to_string()
     data_sample = data_df.head(20).to_string()
+
+    print("Using Chat Completions API")
     
-    client = OpenAI()
+    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
     
     prompt = f"""I have a data file and a schema file that I need to validate.
 
