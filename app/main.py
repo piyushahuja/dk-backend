@@ -280,4 +280,18 @@ async def download_file(file_id: str):
             media_type="text/csv"
         )
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e)) 
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/test")
+async def test_route():
+    """
+    A simple test route to verify the API is working.
+    
+    Returns:
+        Dict containing status and message
+    """
+    return {
+        "status": "success",
+        "message": "API is running correctly",
+        "version": "1.0"
+    } 
