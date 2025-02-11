@@ -1,10 +1,10 @@
-# TailorFlow
+# DataKleen
 
 A FastAPI-based data validation service that helps validate and analyze data files against schema definitions.
 
 ## Overview
 
-TailorFlow provides a robust API for:
+DataKleenprovides a robust API for:
 
 - Validating data files against schema definitions
 - Detecting data quality issues and inconsistencies
@@ -28,8 +28,8 @@ TailorFlow provides a robust API for:
 1. Clone the repository:
 
 ```bash
-git clone https://github.com/piyushahuja/tailorflow-backend.git
-cd tailorflow-backend
+git clone https://github.com/piyushahuja/dk-backend.git
+cd dk-backend
 ```
 
 2. Create and activate a virtual environment:

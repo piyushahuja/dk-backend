@@ -87,9 +87,7 @@ def validate_data_against_schema_llm(schema_file: str, data_file: str) -> Dict:
             name="Data Validator",
             instructions="""You are a data validation assistant. Analyze the provided schema and data files and validate that:
             1. Data types match the schema
-            2. Mandatory fields are present
-            3. Field lengths match specifications
-            4. Any other validation issues
+            2. Column names match the schema
             
             Return your response as a JSON object with this structure:
             {
@@ -105,19 +103,18 @@ def validate_data_against_schema_llm(schema_file: str, data_file: str) -> Dict:
             message="""Please validate the structure of the data file against the schema file. 
             Focus only on schema-level validation:
             1. Check if all required fields from the schema exist in the data file
-            2. Verify that the columns have the correct data types as specified in the schema
-            3. Validate any field length constraints defined in the schema
+    
             
-            Do not validate individual row values at this time.
+            Do not validate individual row values at this time. Do not give erros of the form "Column 'Customer Type' exceeds maximum length of 4 characters"
             
             Return your response as a JSON object with this structure:
             {
-                "is_valid": false,
+                "is_valid": true,
                 "errors": [
-                    "Required column 'user_id' is missing from the data file",
-                    "Column 'age' is defined as INTEGER in schema but contains string data",
-                    "Column 'email' is defined as VARCHAR(255) but contains values longer than 255 characters"
-                ]
+    "Required column 'user_id' is missing from the data file",
+    "Unexpected column 'nickname' found in the data file",
+    "Field order mismatch: Expected 'user_id', 'name', 'email', but found 'name', 'user_id', 'email'",
+]
             }"""
         )
         
