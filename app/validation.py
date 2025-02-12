@@ -167,13 +167,14 @@ Focus only on schema-level validation:
 1. Check if all required fields from the schema exist in the data file
 
 Make sure you only return unique errors.  
-Do not look at row values at this time. Do not ouput errors of the form "Column 'Customer Type' exceeds maximum length of 4 characters"
+Do not look at row values after header row at this time. 
+Do not output errors of the form "Column 'Customer Type' exceeds maximum length of 4 characters"
 
 Return your response as a JSON object with this structure:
 {{
     "is_valid": false,
     "errors": [
-        "Column 'customer_id' missing in data file",
+        "Column 'Customer Type' missing in data file",
     ]
 }}"""
 
