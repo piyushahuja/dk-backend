@@ -85,29 +85,31 @@ def validate_data_against_schema_llm(schema_file: str, data_file: str) -> Dict:
     try:
         # Create assistant with files
         assistant, file_ids = assistant_service.create_assistant_with_files(
-            name="Data Validator",
-            instructions="""You are a data validation assistant. Analyze the provided schema and data files and validate that:
-            1. Data types match the schema
-            2. Column names match the schema
+            name="Schema Validator",
+            instructions="""You are a schema validation assistant provided with schema and data files with the purported schema structure.
+            
+            Output should check for the following conditions and nothing else:
+            1. Field names match the schema column names
+
+            Guardrail: do not ouput errors of the form "Column 'Customer Type' exceeds maximum length of 4 characters"
+            
             
             Return your response as a JSON object with this structure:
             {
                 "is_valid": boolean,
                 "errors": [list of error messages]
-            }""",
+            }
+            """,
             files=[schema_file, data_file]
         )
+        
         
         # Run conversation
         response = assistant_service.run_conversation(
             assistant_id=assistant.id,
-            message="""Please validate the structure of the data file against the schema file. 
-            Focus only on schema-level validation:
-            1. Check if all required fields from the schema exist in the data file
-    
+            message="""Please validate the structure of columns in the data file against the schema file. 
             
-            Do not validate individual row values at this time. Do not give erros of the form "Column 'Customer Type' exceeds maximum length of 4 characters"
-            
+            No No No. Do not look at row values at this time. 
             Return your response as a JSON object with this structure:
             {
                 "is_valid": true,
@@ -164,17 +166,15 @@ Please validate the structure of the data file against the schema file.
 Focus only on schema-level validation:
 1. Check if all required fields from the schema exist in the data file
 2. Verify that the columns have the correct data types as specified in the schema
-3. Validate any field length constraints defined in the schema
 
-Make sure you only return unique errors.
+Make sure you only return unique errors.  
+Prohibit: do not ouput errors of the form "Column 'Customer Type' exceeds maximum length of 4 characters"
 
 Return your response as a JSON object with this structure:
 {{
     "is_valid": false,
     "errors": [
         "Column 'customer_id' missing in data file",
-        "Expected date format YYYY-MM-DD for 'purchase_date'",
-        "Invalid data type in 'quantity' column (expected number)"
     ]
 }}"""
 

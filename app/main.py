@@ -11,7 +11,7 @@ from .cleanup import perform_cleanup_sequence
 from fastapi.responses import FileResponse
 from app.error_detection import logger
 from fastapi.middleware.cors import CORSMiddleware
-from .assistant_manager import AssistantManager
+
 from .assistant_service import AssistantService
 import json
 
