@@ -165,10 +165,9 @@ First few rows of the data file:
 Please validate the structure of the data file against the schema file. 
 Focus only on schema-level validation:
 1. Check if all required fields from the schema exist in the data file
-2. Verify that the columns have the correct data types as specified in the schema
 
 Make sure you only return unique errors.  
-Prohibit: do not ouput errors of the form "Column 'Customer Type' exceeds maximum length of 4 characters"
+Do not look at row values at this time. Do not ouput errors of the form "Column 'Customer Type' exceeds maximum length of 4 characters"
 
 Return your response as a JSON object with this structure:
 {{
